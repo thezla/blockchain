@@ -119,10 +119,11 @@ class Blockchain:
         if self.chain:
             while True:
                 if self.current_transactions:
-                    print(self.current_transactions[0])
-                    if (self.current_transactions[0]['size'] + block_size) <= max_size:
+                    transaction_size = self.current_transactions[0]['size']
+                    if (transaction_size + block_size) <= max_size:
                         block_transactions.append(self.current_transactions[0])
                         del self.current_transactions[0]
+                        block_size += transaction_size
                     else:
                         break
                 else:
@@ -215,6 +216,7 @@ class Blockchain:
         guess = f'{last_proof}{proof}{last_hash}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
         return guess_hash[:2] == "00"           # Hash made easy to simulate mining
+    
 
 
 # Instantiate the Node
@@ -236,7 +238,7 @@ def mine():
     # Forge the new Block by adding it to the chain
     previous_hash = blockchain.hash(last_block)
     block = blockchain.new_block(proof, previous_hash)
-    if block is not None:
+    if block != None:
         response = {
             'message': "New Block Forged",
             'index': block['index'],
@@ -324,6 +326,21 @@ def consensus():
 
     return jsonify(response), 200
 
+
+@app.route('/transactions/generate', methods=['POST'])
+def generate_transactions():
+    values = request.get_json()
+    amount = values.get('amount')
+
+    for i in range(0, amount):
+        amount = recipient = random.randint(1,1000)
+        sender = random.randint(1,100)
+        recipient = random.randint(1,100)
+        while recipient == sender:
+            recipient = random.randint(1,100)
+        
+        blockchain.new_transaction(sender, recipient, amount)
+    return '{amount} transactions generated!'
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
