@@ -1,8 +1,11 @@
 import hashlib
 import json
 from time import time
+from time import sleep
 from urllib.parse import urlparse
 from uuid import uuid4
+import random
+from collections import deque
 
 import requests
 from flask import Flask, jsonify, request
@@ -10,7 +13,7 @@ from flask import Flask, jsonify, request
 
 class Blockchain:
     def __init__(self):
-        self.current_transactions = []
+        self.current_transactions = deque()
         self.chain = []
         self.nodes = set()
 
@@ -107,16 +110,33 @@ class Blockchain:
         :return: New Block
         """
 
+        # Max size of block in "kilobytes"
+        max_size = 2000
+
+        block_size = 0
+        block_transactions = []
+        if self.chain:
+            while self.current_transactions:
+                if (self.current_transactions[0]['size'] + block_size <= max_size):
+                    try:
+                        block_transactions.append(self.current_transactions.popleft())
+                    except:
+                        # Put transactions back first in queue
+                        self.current_transactions.appendleft(reversed(block_transactions))
+                        return None
+                else:
+                    # Put transactions back first in queue
+                    self.current_transactions.appendleft(reversed(block_transactions))
+                    return None
+
         block = {
             'index': len(self.chain) + 1,
             'timestamp': time(),
-            'transactions': self.current_transactions,
+            'transactions': block_transactions,
             'proof': proof,
             'previous_hash': previous_hash or self.hash(self.chain[-1]),
+            'size': block_size,   # 2MB max size
         }
-
-        # Reset the current list of transactions
-        self.current_transactions = []
 
         self.chain.append(block)
         return block
@@ -134,13 +154,16 @@ class Blockchain:
             'sender': sender,
             'recipient': recipient,
             'amount': amount,
+            'size': random.randint(10,100)      #Simulated size in kilobytes
         })
 
         return self.last_block['index'] + 1
 
     @property
     def last_block(self):
-        return self.chain[-1]
+        if self.chain:
+            return self.chain[-1]
+        return 0
 
     @staticmethod
     def hash(block):
@@ -171,7 +194,8 @@ class Blockchain:
         proof = 0
         while self.valid_proof(last_proof, proof, last_hash) is False:
             proof += 1
-
+        # Simulated mining
+        sleep(random.randint(1,4))
         return proof
 
     @staticmethod
@@ -188,7 +212,7 @@ class Blockchain:
 
         guess = f'{last_proof}{proof}{last_hash}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
-        return guess_hash[:4] == "0000"
+        return guess_hash[:2] == "00"           # Hash made easy to simulate mining
 
 
 # Instantiate the Node
@@ -207,26 +231,28 @@ def mine():
     last_block = blockchain.last_block
     proof = blockchain.proof_of_work(last_block)
 
-    # We must receive a reward for finding the proof.
-    # The sender is "0" to signify that this node has mined a new coin.
-    blockchain.new_transaction(
-        sender="0",
-        recipient=node_identifier,
-        amount=1,
-    )
-
     # Forge the new Block by adding it to the chain
     previous_hash = blockchain.hash(last_block)
     block = blockchain.new_block(proof, previous_hash)
+    if block is not None:
+        response = {
+            'message': "New Block Forged",
+            'index': block['index'],
+            'transactions': block['transactions'],
+            'proof': block['proof'],
+            'previous_hash': block['previous_hash'],
+        }
 
-    response = {
-        'message': "New Block Forged",
-        'index': block['index'],
-        'transactions': block['transactions'],
-        'proof': block['proof'],
-        'previous_hash': block['previous_hash'],
-    }
-    return jsonify(response), 200
+        # We must receive a reward for finding the proof.
+        # The sender is "0" to signify that this node has mined a new coin.
+        blockchain.new_transaction(
+            sender="0",
+            recipient=node_identifier,
+            amount=1,
+        )
+
+        return jsonify(response), 200
+    return 'Error: Not enough transactions', 400
 
 
 @app.route('/transactions/new', methods=['POST'])
