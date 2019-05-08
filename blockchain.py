@@ -13,7 +13,8 @@ from flask import Flask, jsonify, request
 
 class Blockchain:
     def __init__(self):
-        self.current_transactions = deque()
+        #self.current_transactions = deque()
+        self.current_transactions = []
         self.chain = []
         self.nodes = set()
 
@@ -118,13 +119,16 @@ class Blockchain:
         if self.chain:
             while True:
                 if self.current_transactions:
-                    if self.current_transactions[0]['size'] + block_size <= max_size:
-                        block_transactions.append(self.current_transactions.popleft())
+                    print(self.current_transactions[0])
+                    if (self.current_transactions[0]['size'] + block_size) <= max_size:
+                        block_transactions.append(self.current_transactions[0])
+                        del self.current_transactions[0]
                     else:
                         break
                 else:
                     # Put transactions back in front of queue
-                    self.current_transactions.append(reversed(block_transactions))
+                    for e in reversed(block_transactions):
+                        self.current_transactions.insert(0, e)
                     return None
 
         block = {
@@ -268,6 +272,13 @@ def new_transaction():
     response = {'message': f'Transaction will be added to Block {index}'}
     return jsonify(response), 201
 
+@app.route('/transactions', methods=['GET'])
+def get_transactions():
+    response = {
+        'transactions': blockchain.current_transactions,
+        'size': len(blockchain.current_transactions)
+    }
+    return jsonify(response), 200
 
 @app.route('/chain', methods=['GET'])
 def full_chain():
