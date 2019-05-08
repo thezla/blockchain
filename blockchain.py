@@ -116,17 +116,15 @@ class Blockchain:
         block_size = 0
         block_transactions = []
         if self.chain:
-            while self.current_transactions:
-                if (self.current_transactions[0]['size'] + block_size <= max_size):
-                    try:
+            while True:
+                if self.current_transactions:
+                    if self.current_transactions[0]['size'] + block_size <= max_size:
                         block_transactions.append(self.current_transactions.popleft())
-                    except:
-                        # Put transactions back first in queue
-                        self.current_transactions.appendleft(reversed(block_transactions))
-                        return None
+                    else:
+                        break
                 else:
-                    # Put transactions back first in queue
-                    self.current_transactions.appendleft(reversed(block_transactions))
+                    # Put transactions back in front of queue
+                    self.current_transactions.append(reversed(block_transactions))
                     return None
 
         block = {
