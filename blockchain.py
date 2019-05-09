@@ -17,7 +17,10 @@ class Blockchain:
         self.nodes = set()
 
         # Create the genesis block
-        self.new_block(previous_hash='1', proof=100, block_transactions=[])
+        self.new_genesis_block(previous_hash='1', proof=100, block_transactions=[])
+
+        # Add first neighbor node
+        self.register_node("http://0.0.0.0:5000")
 
     def register_node(self, address):
         """
@@ -35,6 +38,17 @@ class Blockchain:
         else:
             raise ValueError('Invalid URL')
 
+    def resolve_nodes(self):
+        # TODO: Ability to remove adress completely from network
+        # TODO: DOESNT WORK
+        if neighbors:
+            for node in neighbors:
+                response = requests.get(f'http://{node}/nodes')
+                if response.status_code == 200:
+                    data = response.json()
+                    data = set(data['data'])
+                    neighbors = neighbors.union(data)
+            self.nodes = neighbors
 
     def valid_chain(self, chain):
         """
@@ -74,6 +88,7 @@ class Blockchain:
         :return: True if our chain was replaced, False if not
         """
 
+        self.resolve_nodes()
         neighbours = self.nodes
         new_chain = None
 
@@ -89,7 +104,7 @@ class Blockchain:
                 chain = response.json()['chain']
 
                 # Check if the length is longer and the chain is valid
-                if length > max_length and self.valid_chain(chain):
+                if length >= max_length and self.valid_chain(chain):
                     max_length = length
                     new_chain = chain
 
@@ -132,7 +147,25 @@ class Blockchain:
         :return: New Block
         """
         # Ensure we are the longest chain
-        if resolve_conflicts():
+        if self.resolve_conflicts():
+            block_size = 0
+            for t in block_transactions:
+                block_size += t['size']
+
+            block = {
+                'index': len(self.chain) + 1,
+                'timestamp': time(),
+                'transactions': block_transactions,
+                'proof': proof,
+                'previous_hash': previous_hash or self.hash(self.chain[-1]),
+                'size': block_size,   # 2MB max size
+            }
+
+            self.chain.append(block)
+            return block
+    
+    def new_genesis_block(self, proof, previous_hash, block_transactions):
+        if not self.chain:
             block_size = 0
             for t in block_transactions:
                 block_size += t['size']
@@ -359,6 +392,21 @@ def full_chain():
     return jsonify(response), 200
 
 
+@app.route('/nodes/list', methods=['GET'])
+def display_nodes():
+    response = {
+        'nodes': list(blockchain.nodes)
+    }
+    return jsonify(response), 200
+
+@app.route('/nodes', methods=['GET'])
+def get_nodes():
+    response = {
+        'data': list(blockchain.nodes)
+    }
+    return jsonify(response), 200
+
+
 @app.route('/nodes/register', methods=['POST'])
 def register_nodes():
     values = request.get_json()
@@ -416,7 +464,10 @@ if __name__ == '__main__':
 
     parser = ArgumentParser()
     parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
+    #parser.add_argument('-t', '--test', default=5, type=int, help='amount of nodes to create')
     args = parser.parse_args()
     port = args.port
+    #nodes = args.test
 
+    blockchain.register_node('http://0.0.0.0:{}'.format(port))
     app.run(host='0.0.0.0', port=port)
