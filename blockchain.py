@@ -5,7 +5,7 @@ from time import sleep
 from urllib.parse import urlparse
 from uuid import uuid4
 import random
-from collections import deque
+import threading
 
 import requests
 from flask import Flask, jsonify, request
@@ -13,13 +13,12 @@ from flask import Flask, jsonify, request
 
 class Blockchain:
     def __init__(self):
-        #self.current_transactions = deque()
         self.current_transactions = []
         self.chain = []
         self.nodes = set()
 
         # Create the genesis block
-        self.new_block(previous_hash='1', proof=100)
+        self.new_block(previous_hash='1', proof=100, block_transactions=[])
 
     def register_node(self, address):
         """
@@ -102,15 +101,7 @@ class Blockchain:
 
         return False
 
-    def new_block(self, proof, previous_hash):
-        """
-        Create a new Block in the Blockchain
-
-        :param proof: The proof given by the Proof of Work algorithm
-        :param previous_hash: Hash of previous Block
-        :return: New Block
-        """
-
+    def compose_block_transactions(self):
         # Max size of block in "kilobytes"
         max_size = 2000
 
@@ -130,7 +121,21 @@ class Blockchain:
                     # Put transactions back in front of queue
                     for e in reversed(block_transactions):
                         self.current_transactions.insert(0, e)
-                    return None
+                    return []
+        return block_transactions
+
+    def new_block(self, proof, previous_hash, block_transactions):
+        """
+        Create a new Block in the Blockchain
+
+        :param proof: The proof given by the Proof of Work algorithm
+        :param previous_hash: Hash of previous Block
+        :return: New Block
+        """
+
+        block_size = 0
+        for t in block_transactions:
+            block_size += t['size']
 
         block = {
             'index': len(self.chain) + 1,
@@ -216,8 +221,6 @@ class Blockchain:
         guess = f'{last_proof}{proof}{last_hash}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
         return guess_hash[:2] == "00"           # Hash made easy to simulate mining
-    
-
 
 # Instantiate the Node
 app = Flask(__name__)
@@ -228,35 +231,98 @@ node_identifier = str(uuid4()).replace('-', '')
 # Instantiate the Blockchain
 blockchain = Blockchain()
 
+# Activates / Deactivates mining process
+is_mining = False
+
+# Asynchronous mining
+class Mine(threading.Thread):
+    def __init__(self, task_id):
+        threading.Thread.__init__(self)
+        self.task_id = task_id
+
+    def run(self):
+        while is_mining:
+            # Compose list of transactions of block
+            block_transactions = blockchain.compose_block_transactions()
+            if block_transactions:
+                # We run the proof of work algorithm to get the next proof...
+                last_block = blockchain.last_block
+                proof = blockchain.proof_of_work(last_block)
+
+                # Forge the new Block by adding it to the chain
+                previous_hash = blockchain.hash(last_block)
+                block = blockchain.new_block(proof, previous_hash, block_transactions)
+                if block != None:
+                    response = {
+                        'message': "New Block Forged",
+                        'index': block['index'],
+                        'transactions': block['transactions'],
+                        'proof': block['proof'],
+                        'previous_hash': block['previous_hash'],
+                        'size': block['size']
+                    }
+
+                    # We must receive a reward for finding the proof.
+                    # The sender is "0" to signify that this node has mined a new coin.
+                    blockchain.new_transaction(
+                        sender="0",
+                        recipient=node_identifier,
+                        amount=1,
+                    )
+
+
+@app.route('/mine_next', methods=['GET'])
+def mine_next():
+    # Compose list of transactions of block
+    block_transactions = blockchain.compose_block_transactions()
+    if block_transactions:
+        # We run the proof of work algorithm to get the next proof...
+        last_block = blockchain.last_block
+        proof = blockchain.proof_of_work(last_block)
+
+        # Forge the new Block by adding it to the chain
+        previous_hash = blockchain.hash(last_block)
+        block = blockchain.new_block(proof, previous_hash, block_transactions)
+        if block != None:
+            response = {
+                'message': "New Block Forged",
+                'index': block['index'],
+                'transactions': block['transactions'],
+                'proof': block['proof'],
+                'previous_hash': block['previous_hash'],
+                'size': block['size']
+            }
+
+            # We must receive a reward for finding the proof.
+            # The sender is "0" to signify that this node has mined a new coin.
+            blockchain.new_transaction(
+                sender="0",
+                recipient=node_identifier,
+                amount=1,
+            )
+
+            return jsonify(response), 200
+    return 'Error: Not enough transactions', 400
+
 
 @app.route('/mine', methods=['GET'])
 def mine():
-    # We run the proof of work algorithm to get the next proof...
-    last_block = blockchain.last_block
-    proof = blockchain.proof_of_work(last_block)
+    global is_mining
+    is_mining = True
+    async_task = Mine(task_id=1)
+    try:
+        with app.test_request_context():
+            async_task.start()
+        return 'Started mining process', 200
+    except RuntimeError:
+        return 'Node is already mining', 400
 
-    # Forge the new Block by adding it to the chain
-    previous_hash = blockchain.hash(last_block)
-    block = blockchain.new_block(proof, previous_hash)
-    if block != None:
-        response = {
-            'message': "New Block Forged",
-            'index': block['index'],
-            'transactions': block['transactions'],
-            'proof': block['proof'],
-            'previous_hash': block['previous_hash'],
-        }
 
-        # We must receive a reward for finding the proof.
-        # The sender is "0" to signify that this node has mined a new coin.
-        blockchain.new_transaction(
-            sender="0",
-            recipient=node_identifier,
-            amount=1,
-        )
-
-        return jsonify(response), 200
-    return 'Error: Not enough transactions', 400
+@app.route('/mine/stop', methods=['GET'])
+def stop_mining():
+    global is_mining
+    is_mining = False
+    return 'Mining process stopped', 400
 
 
 @app.route('/transactions/new', methods=['POST'])
@@ -274,6 +340,7 @@ def new_transaction():
     response = {'message': f'Transaction will be added to Block {index}'}
     return jsonify(response), 201
 
+
 @app.route('/transactions', methods=['GET'])
 def get_transactions():
     response = {
@@ -281,6 +348,7 @@ def get_transactions():
         'size': len(blockchain.current_transactions)
     }
     return jsonify(response), 200
+
 
 @app.route('/chain', methods=['GET'])
 def full_chain():
@@ -327,6 +395,7 @@ def consensus():
     return jsonify(response), 200
 
 
+# Generate transactions for testing
 @app.route('/transactions/generate', methods=['POST'])
 def generate_transactions():
     values = request.get_json()
