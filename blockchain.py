@@ -10,7 +10,6 @@ import threading
 import requests
 from flask import Flask, jsonify, request
 
-
 class Blockchain:
     def __init__(self):
         self.current_transactions = []
@@ -132,22 +131,23 @@ class Blockchain:
         :param previous_hash: Hash of previous Block
         :return: New Block
         """
+        # Ensure we are the longest chain
+        if resolve_conflicts():
+            block_size = 0
+            for t in block_transactions:
+                block_size += t['size']
 
-        block_size = 0
-        for t in block_transactions:
-            block_size += t['size']
+            block = {
+                'index': len(self.chain) + 1,
+                'timestamp': time(),
+                'transactions': block_transactions,
+                'proof': proof,
+                'previous_hash': previous_hash or self.hash(self.chain[-1]),
+                'size': block_size,   # 2MB max size
+            }
 
-        block = {
-            'index': len(self.chain) + 1,
-            'timestamp': time(),
-            'transactions': block_transactions,
-            'proof': proof,
-            'previous_hash': previous_hash or self.hash(self.chain[-1]),
-            'size': block_size,   # 2MB max size
-        }
-
-        self.chain.append(block)
-        return block
+            self.chain.append(block)
+            return block
 
     def new_transaction(self, sender, recipient, amount):
         """
