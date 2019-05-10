@@ -39,16 +39,17 @@ class Blockchain:
             raise ValueError('Invalid URL')
 
     def resolve_nodes(self):
+        """
+        Spread node list to neighbor nodes
+        """
         # TODO: Ability to remove adress completely from network
         # TODO: DOESNT WORK
+        neighbors = self.nodes
         if neighbors:
+            payload = {'nodes': list(neighbors)}
+            headers = {'content-type': 'application/json'}
             for node in neighbors:
-                response = requests.get(f'http://{node}/nodes')
-                if response.status_code == 200:
-                    data = response.json()
-                    data = set(data['data'])
-                    neighbors = neighbors.union(data)
-            self.nodes = neighbors
+                response = requests.post(url=f'http://{node}/nodes/register', json=payload, headers=headers)
 
     def valid_chain(self, chain):
         """
@@ -88,7 +89,6 @@ class Blockchain:
         :return: True if our chain was replaced, False if not
         """
 
-        self.resolve_nodes()
         neighbours = self.nodes
         new_chain = None
 
@@ -112,7 +112,6 @@ class Blockchain:
         if new_chain:
             self.chain = new_chain
             return True
-
         return False
 
     def compose_block_transactions(self):
@@ -267,6 +266,9 @@ blockchain = Blockchain()
 # Activates / Deactivates mining process
 is_mining = False
 
+# Activates / Deactivates node list syncing process
+is_syncing = True
+
 # Asynchronous mining
 class Mine(threading.Thread):
     def __init__(self, task_id):
@@ -302,6 +304,16 @@ class Mine(threading.Thread):
                         recipient=node_identifier,
                         amount=1,
                     )
+
+class Sync(threading.Thread):
+    def __init__(self, task_id):
+        threading.Thread.__init__(self)
+        self.task_id = task_id
+    
+    def run(self):
+        while is_syncing:
+            blockchain.resolve_nodes()
+            sleep(5)
 
 
 @app.route('/mine_next', methods=['GET'])
@@ -358,6 +370,26 @@ def stop_mining():
     return 'Mining process stopped', 400
 
 
+@app.route('/sync', methods=['GET'])
+def sync_nodes():
+    global is_syncing
+    is_syncing = True
+    async_task = Sync(task_id=2)
+    try:
+        with app.test_request_context():
+            async_task.start()
+        return 'Started syncing node lists', 200
+    except RuntimeError:
+        return 'Node is already syncing', 400
+
+
+@app.route('/sync/stop', methods=['GET'])
+def stop_syncing():
+    global is_syncing
+    is_syncing = False
+    return 'Syncing process stopped', 400
+
+
 @app.route('/transactions/new', methods=['POST'])
 def new_transaction():
     values = request.get_json()
@@ -399,10 +431,11 @@ def display_nodes():
     }
     return jsonify(response), 200
 
+
 @app.route('/nodes', methods=['GET'])
 def get_nodes():
     response = {
-        'data': list(blockchain.nodes)
+        'nodes': list(blockchain.nodes)
     }
     return jsonify(response), 200
 
@@ -411,7 +444,7 @@ def get_nodes():
 def register_nodes():
     values = request.get_json()
 
-    nodes = values.get('nodes')
+    nodes = values['nodes']
     if nodes is None:
         return "Error: Please supply a valid list of nodes", 400
 
@@ -469,5 +502,14 @@ if __name__ == '__main__':
     port = args.port
     #nodes = args.test
 
+    # Add own address to node list
     blockchain.register_node('http://0.0.0.0:{}'.format(port))
+
+    # Start flask app
     app.run(host='0.0.0.0', port=port)
+
+    # Activate syncing of node lists
+    print(requests.get('http://0.0.0.0:{}/sync'.format(port)))
+
+    # Activate mining
+    print(requests.get('http://0.0.0.0:{}/mine'.format(port)))
