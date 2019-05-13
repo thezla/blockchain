@@ -137,7 +137,7 @@ class Blockchain:
                     return []
         return block_transactions
 
-    def new_block(self, proof, previous_hash, block_transactions):
+    def new_block(self, proof, previous_hash, block_transactions, node_identifier):
         """
         Create a new Block in the Blockchain
 
@@ -158,6 +158,7 @@ class Blockchain:
                 'proof': proof,
                 'previous_hash': previous_hash or self.hash(self.chain[-1]),
                 'size': block_size,   # 2MB max size
+                'node': node_identifier
             }
 
             self.chain.append(block)
@@ -194,10 +195,15 @@ class Blockchain:
             'sender': sender,
             'recipient': recipient,
             'amount': amount,
-            'size': random.randint(10,100)      #Simulated size in kilobytes
+            'size': random.randint(10,100),         # Simulated size in kilobytes
+            'id': str(uuid4()).replace('-', '')     # Unique ID
         })
 
         return self.last_block['index'] + 1
+    
+    def resolve_transactions():
+        pass
+
 
     @property
     def last_block(self):
@@ -277,6 +283,8 @@ class Mine(threading.Thread):
 
     def run(self):
         while is_mining:
+            #TODO: Sync transactions across network
+
             # Compose list of transactions of block
             block_transactions = blockchain.compose_block_transactions()
             if block_transactions:
@@ -286,7 +294,7 @@ class Mine(threading.Thread):
 
                 # Forge the new Block by adding it to the chain
                 previous_hash = blockchain.hash(last_block)
-                block = blockchain.new_block(proof, previous_hash, block_transactions)
+                block = blockchain.new_block(proof, previous_hash, block_transactions, node_identifier)
                 if block != None:
                     response = {
                         'message': "New Block Forged",
@@ -309,45 +317,12 @@ class Sync(threading.Thread):
     def __init__(self, task_id):
         threading.Thread.__init__(self)
         self.task_id = task_id
-    
+
     def run(self):
         while is_syncing:
-            blockchain.resolve_nodes()
-            sleep(5)
-
-
-@app.route('/mine_next', methods=['GET'])
-def mine_next():
-    # Compose list of transactions of block
-    block_transactions = blockchain.compose_block_transactions()
-    if block_transactions:
-        # We run the proof of work algorithm to get the next proof...
-        last_block = blockchain.last_block
-        proof = blockchain.proof_of_work(last_block)
-
-        # Forge the new Block by adding it to the chain
-        previous_hash = blockchain.hash(last_block)
-        block = blockchain.new_block(proof, previous_hash, block_transactions)
-        if block != None:
-            response = {
-                'message': "New Block Forged",
-                'index': block['index'],
-                'transactions': block['transactions'],
-                'proof': block['proof'],
-                'previous_hash': block['previous_hash'],
-                'size': block['size']
-            }
-
-            # We must receive a reward for finding the proof.
-            # The sender is "0" to signify that this node has mined a new coin.
-            blockchain.new_transaction(
-                sender="0",
-                recipient=node_identifier,
-                amount=1,
-            )
-
-            return jsonify(response), 200
-    return 'Error: Not enough transactions', 400
+            if len(blockchain.nodes) > 1:
+                blockchain.resolve_nodes()
+                sleep(5)
 
 
 @app.route('/mine', methods=['GET'])
@@ -413,6 +388,25 @@ def get_transactions():
         'size': len(blockchain.current_transactions)
     }
     return jsonify(response), 200
+
+
+@app.route('/transactions/sync', methods=['POST'])
+def sync_transactions(self):
+    values = request.get_json()
+
+    transactions = values['transactions']
+    if transactions is None:
+        return "Error: Please supply a valid list of transactions", 400
+
+    for trans in transactions:
+        if trans not in self.current_transactions:      #TODO: Bättre datastruktur, hashmap?
+            blockchain.new_transaction()
+
+    response = {
+        'message': 'New nodes have been added',
+        'total_nodes': list(blockchain.nodes),
+    }
+    return jsonify(response), 201
 
 
 @app.route('/chain', methods=['GET'])
@@ -492,24 +486,24 @@ def generate_transactions():
         blockchain.new_transaction(sender, recipient, amount)
     return '{amount} transactions generated!'
 
+# Initialization --------------------
+# Activate syncing of node lists
+sync_nodes()
+
+# Activate mining
+mine()
+
+
 if __name__ == '__main__':
     from argparse import ArgumentParser
 
     parser = ArgumentParser()
     parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
-    #parser.add_argument('-t', '--test', default=5, type=int, help='amount of nodes to create')
     args = parser.parse_args()
     port = args.port
-    #nodes = args.test
 
     # Add own address to node list
     blockchain.register_node('http://0.0.0.0:{}'.format(port))
 
     # Start flask app
     app.run(host='0.0.0.0', port=port)
-
-    # Activate syncing of node lists
-    print(requests.get('http://0.0.0.0:{}/sync'.format(port)))
-
-    # Activate mining
-    print(requests.get('http://0.0.0.0:{}/mine'.format(port)))
