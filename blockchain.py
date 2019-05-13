@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 import random
 import threading
+import datetime
 
 import requests
 from flask import Flask, jsonify, request
@@ -38,18 +39,19 @@ class Blockchain:
         else:
             raise ValueError('Invalid URL')
 
-    def resolve_nodes(self):
+    def resolve_nodes(self, node_address):
         """
         Spread node list to neighbor nodes
         """
         # TODO: Ability to remove adress completely from network
-        # TODO: DOESNT WORK
         neighbors = self.nodes
         if neighbors:
             payload = {'nodes': list(neighbors)}
             headers = {'content-type': 'application/json'}
             for node in neighbors:
-                response = requests.post(url=f'http://{node}/nodes/register', json=payload, headers=headers)
+                # Do not request node list from itself
+                if node != node_address:
+                    response = requests.post(url=f'http://{node}/nodes/register', json=payload, headers=headers)
 
     def valid_chain(self, chain):
         """
@@ -153,7 +155,7 @@ class Blockchain:
 
             block = {
                 'index': len(self.chain) + 1,
-                'timestamp': time(),
+                'timestamp': datetime.datetime.now(),
                 'transactions': block_transactions,
                 'proof': proof,
                 'previous_hash': previous_hash or self.hash(self.chain[-1]),
@@ -265,6 +267,7 @@ app = Flask(__name__)
 
 # Generate a globally unique address for this node
 node_identifier = str(uuid4()).replace('-', '')
+node_address = ""
 
 # Instantiate the Blockchain
 blockchain = Blockchain()
@@ -321,8 +324,8 @@ class Sync(threading.Thread):
     def run(self):
         while is_syncing:
             if len(blockchain.nodes) > 1:
-                blockchain.resolve_nodes()
-                sleep(5)
+                blockchain.resolve_nodes(node_address)
+                sleep(8)
 
 
 @app.route('/mine', methods=['GET'])
@@ -418,14 +421,6 @@ def full_chain():
     return jsonify(response), 200
 
 
-@app.route('/nodes/list', methods=['GET'])
-def display_nodes():
-    response = {
-        'nodes': list(blockchain.nodes)
-    }
-    return jsonify(response), 200
-
-
 @app.route('/nodes', methods=['GET'])
 def get_nodes():
     response = {
@@ -493,7 +488,6 @@ sync_nodes()
 # Activate mining
 mine()
 
-
 if __name__ == '__main__':
     from argparse import ArgumentParser
 
@@ -503,7 +497,9 @@ if __name__ == '__main__':
     port = args.port
 
     # Add own address to node list
-    blockchain.register_node('http://0.0.0.0:{}'.format(port))
+    address = 'http://0.0.0.0:{}'.format(port)
+    blockchain.register_node(address)
+    node_address = address
 
     # Start flask app
     app.run(host='0.0.0.0', port=port)
