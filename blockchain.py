@@ -203,6 +203,7 @@ class Blockchain:
 
         return self.last_block['index'] + 1
     
+    # TODO: Fixa transaktionssync
     def resolve_transactions():
         pass
 
