@@ -45,7 +45,7 @@ class Blockchain:
         """
         # TODO: Ability to remove adress completely from network
         neighbors = self.nodes
-        if neighbors:
+        if len(neighbors) > 1:
             payload = {'nodes': list(neighbors)}
             headers = {'content-type': 'application/json'}
             for node in neighbors:
@@ -255,12 +255,12 @@ class Blockchain:
         :param proof: <int> Current Proof
         :param last_hash: <str> The hash of the Previous Block
         :return: <bool> True if correct, False if not.
-
         """
 
         guess = f'{last_proof}{proof}{last_hash}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
         return guess_hash[:2] == "00"           # Hash made easy to simulate mining
+
 
 # Instantiate the Node
 app = Flask(__name__)
@@ -323,9 +323,8 @@ class Sync(threading.Thread):
 
     def run(self):
         while is_syncing:
-            if len(blockchain.nodes) > 1:
-                blockchain.resolve_nodes(node_address)
-                sleep(8)
+            blockchain.resolve_nodes(node_address)
+            sleep(8)
 
 
 @app.route('/mine', methods=['GET'])
@@ -461,7 +460,6 @@ def consensus():
             'message': 'Our chain is authoritative',
             'chain': blockchain.chain
         }
-
     return jsonify(response), 200
 
 
