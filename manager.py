@@ -154,7 +154,18 @@ class Blockchain:
         # Ensure we are the longest chain
         if self.resolve_conflicts():
             self.chain.append(block)
+            for t in current_transactions:
+                for b_t in block['transactions']:
+                    if b_t['id'] == t['id']:
+                        del t
+            start_cluster()
             return block
+    
+    def start_cluster_mining():
+        pass
+
+    def stop_cluster_mining():
+        pass
     
     def new_genesis_block(self, proof, previous_hash, block_transactions):
         if not self.chain:
@@ -191,14 +202,13 @@ class Blockchain:
             'id': str(uuid4()).replace('-', '')     # Unique ID
         })
 
-        return self.last_block['index'] + 1
-    
+
     # TODO: Fixa transaktionssync
     def resolve_transactions():
         pass
 
 
-    @property
+    #@property
     def last_block(self):
         if self.chain:
             return self.chain[-1]
@@ -216,6 +226,7 @@ class Blockchain:
         block_string = json.dumps(block, sort_keys=True).encode()
         return hashlib.sha256(block_string).hexdigest()
 
+    '''
     def proof_of_work(self, last_block):
         """
         Simple Proof of Work Algorithm:
@@ -251,12 +262,12 @@ class Blockchain:
         guess = f'{last_proof}{proof}{last_hash}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
         return guess_hash[:2] == "00"           # Hash made easy to simulate mining
-
+        '''
 
 # Instantiate the Node
 app = Flask(__name__)
 
-# Generate a globally unique address for this node
+# Generate a globally unique id for this node
 node_identifier = str(uuid4()).replace('-', '')
 node_address = ""
 
@@ -266,9 +277,6 @@ blockchain = Blockchain()
 # Activates / Deactivates node list syncing process
 is_syncing = True
 
-# Pauses mining of all slaves if solution is found
-solution_found = False
-
 
 class Manage(threading.Thread):
     def __init__(self, task_id):
@@ -276,13 +284,13 @@ class Manage(threading.Thread):
         self.task_id = task_id
     
     def run(self):
+        payload = {
+            'transactions': blockchain.compose_block_transactions(),
+            'last_block': blockchain.last_block()
+        }
         for miner in blockchain.slave_nodes:
-            payload = {
-                'transactions': blockchain.compose_block_transactions(),
-                'last_block': blockchain.last_block()
-            }
-            requests.post(url=miner+'/start', json=payload)
-            
+            requests.post(url='http://'+miner+'/start', json=payload)
+
 
 class NewMiner(threading.Thread):
     def __init__(self, task_id):
@@ -375,11 +383,9 @@ def sync_transactions(self):
 def slave_done():
     values = request.get_json()
     finder = values[1]['node']
-    for miner in blockchain.slave_nodes:
-        if miner != values[1]['node']:
-            requests.get(miner+'/stop')
-
-    blockchain.add_block(values)
+    block = values[0]
+    stop_cluster()
+    blockchain.add_block(block)
 
 
 @app.route('/chain', methods=['GET'])
@@ -465,21 +471,29 @@ def start_cluster():
     return 'Cluster mining initiated!', 200
 
 
+# Tells cluster to stop mining
+@app.route('/cluster/stop', method=['GET'])
+def stop_cluster():
+    for miner in blockchain.slave_nodes:
+        requests.get('http://'+miner+'/stop')
+    return 'Cluster mining deactivated!', 200
+
+
 # Generate transactions for testing
 @app.route('/transactions/generate', methods=['POST'])
 def generate_transactions():
     values = request.get_json()
-    amount = values.get('amount')
+    number = values.get('number')
 
-    for i in range(0, amount):
-        amount = recipient = random.randint(1,1000)
+    for i in range(0, number):
+        amount = random.randint(1,1000)
         sender = random.randint(1,100)
         recipient = random.randint(1,100)
         while recipient == sender:
             recipient = random.randint(1,100)
         
         blockchain.new_transaction(sender, recipient, amount)
-    return '{} transactions generated!'.format(amount)
+    return '{} transactions generated!'.format(number)
 
 
 # Initialization --------------------

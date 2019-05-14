@@ -1,5 +1,5 @@
 import hashlib
-import datetime
+from datetime import date, datetime
 import json
 from uuid import uuid4
 from time import sleep
@@ -21,7 +21,7 @@ class Miner:
         # Activates / Deactivates mining process
         self.is_mining = False
 
-    def new_block(self, proof, previous_hash, block_transactions, node_identifier):
+    def new_block(self, proof, previous_hash, block_transactions, node_identifier, last_block):
         """
         Create a new Block for the manager node
 
@@ -29,24 +29,20 @@ class Miner:
         :param previous_hash: Hash of previous Block
         :return: New Block
         """
-        # Ensure we are the longest chain
-        if self.resolve_conflicts():
-            block_size = 0
-            for t in block_transactions:
-                block_size += t['size']
+        block_size = 0
+        for t in block_transactions:
+            block_size += t['size']
 
-            block = {
-                'index': len(self.chain) + 1,
-                'timestamp': datetime.datetime.now(),
-                'transactions': block_transactions,
-                'proof': proof,
-                'previous_hash': previous_hash or self.hash(self.chain[-1]),
-                'size': block_size,   # 2MB max size
-                'node': node_identifier
-            }
-
-            self.chain.append(block)
-            return block
+        block = {
+            'index': last_block['index'] + 1,
+            'timestamp': datetime.now().isoformat(),
+            'transactions': block_transactions,
+            'proof': proof,
+            'previous_hash': previous_hash,
+            'size': block_size,   # 2MB max size
+            'node': node_identifier
+        }
+        return block
         
     @staticmethod
     def hash(block):
@@ -119,17 +115,9 @@ class Mine(threading.Thread):
 
                 # Forge the new Block by adding it to the chain
                 previous_hash = miner.hash(last_block)
-                block = miner.new_block(proof, previous_hash, block_transactions, miner.node_identifier)
+                block = miner.new_block(proof, previous_hash, block_transactions, miner.node_identifier, last_block)
                 if block != None:
                     who = {'node': miner.address}
-                    response = {
-                        'message': "New Block Forged",
-                        'index': block['index'],
-                        'transactions': block['transactions'],
-                        'proof': block['proof'],
-                        'previous_hash': block['previous_hash'],
-                        'size': block['size']
-                    }
 
                     # We must receive a reward for finding the proof.
                     # The sender is "0" to signify that this node has mined a new coin.
@@ -138,8 +126,7 @@ class Mine(threading.Thread):
                         'recipient': miner.node_identifier,
                         'amount': 1
                     }
-
-                    requests.post(url=miner.manager_node+'/slave_done', json=[response, who])
+                    requests.post(url=miner.manager_node+'/slave/done', json=[block, who])
                     requests.post(url=miner.manager_node+'/transactions/new', json=payload)
                     miner.is_mining = False
 
@@ -148,7 +135,7 @@ class Mine(threading.Thread):
 
 
 @app.route('/start', methods=['POST'])
-def add_block(self):
+def add_block():
     miner.is_mining = True
     values = request.get_json()
 
@@ -173,9 +160,11 @@ def add_block(self):
 
 
 @app.route('/stop', methods=['GET'])
-def stop_mining(self):
+def stop_mining():
     miner.is_mining = False
+    return 'Mining process stoppped in node: {}'.format(miner.node_address), 200
 
+# Starts a miner node
 def start(self, address='http://0.0.0.0', port=6000, manager_address='http://0.0.0.0:5000'):
     miner.manager_node = manager_address
     miner.address = '{}:{}'.format(address, port)
