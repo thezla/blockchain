@@ -270,7 +270,7 @@ is_syncing = True
 solution_found = False
 
 
-class Managing(threading.Thread):
+class Manage(threading.Thread):
     def __init__(self, task_id):
         threading.Thread.__init__(self)
         self.task_id = task_id
@@ -438,6 +438,7 @@ def consensus():
 def get_cluster():
     return jsonify(list(blockchain.slave_nodes)), 200
 
+
 # Adds a miner node to cluster
 @app.route('/cluster/add_miner', methods=['GET'])
 def add_miner():
@@ -450,6 +451,18 @@ def add_miner():
 
     blockchain.number_of_nodes = len(blockchain.slave_nodes)
     return 'Miner node created and added to cluster!', 200
+
+
+# Tells cluster to start mining
+@app.route('/cluster/start', methods=['GET'])
+def start_cluster():
+    async_task = Manage(task_id=4)
+    try:
+        with app.test_request_context():
+            async_task.start()
+    except RuntimeError:
+        return 'Could not start cluster mining', 400
+    return 'Cluster mining initiated!', 200
 
 
 # Generate transactions for testing

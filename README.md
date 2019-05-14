@@ -1,12 +1,18 @@
-# Learn Blockchains by Building One
 
-[![Build Status](https://travis-ci.org/dvf/blockchain.svg?branch=master)](https://travis-ci.org/dvf/blockchain)
+## Clustering Distributed Ledger Technologies for Scalability.
 
-This is the source code for my post on [Building a Blockchain](https://medium.com/p/117428612f46). 
+In this project we have added on top of the base blockchain code fork found below.
+The goal of this project is to study how clustering of DLT nodes affects scalability.
+* Manager nodes are in charge of clusters of miner nodes. 
+* The miner nodes are not aware of the blockchain and only follow the instructions of the manager node.
+* The manager nodes form a network with each other and keep their chains and transaction pool synced.
+* The manager nodes compete to mine blocks, but the miner nodes in each cluster work together to find the proof.
+
+Forked from [Building a Blockchain](https://medium.com/p/117428612f46). 
 
 ## Installation
 
-1. Make sure [Python 3.6+](https://www.python.org/downloads/) is installed. 
+1. Make sure [Python 3.7+](https://www.python.org/downloads/) is installed.
 2. Install [pipenv](https://github.com/kennethreitz/pipenv). 
 
 ```
@@ -17,49 +23,17 @@ $ pip install pipenv
 $ pipenv install 
 ``` 
 
-4. Run the server:
+4. Run a simple blockchain:
     * `$ pipenv run python blockchain.py` 
-    * `$ pipenv run python blockchain.py -p 5001`
+    * `$ pipenv run python blockchain.py -p 5001`, where -p is the port, default IP is 0.0.0.0
     * `$ pipenv run python blockchain.py --port 5002`
-    
-## Docker
 
-Another option for running this blockchain program is to use Docker.  Follow the instructions below to create a local Docker container:
+5. Run a cluster of miners:
+    * Start a manager node: `$ pipenv run manager.py -p 5000`, where -p is the port, default IP is 0.0.0.0
+    * To start a slave node you have to send a HTTP/GET request to the manager node's endpoint, e.g. "0.0.0.0:5000/cluster/add_miner". We would recommend the application PostMan for sending requests. You can also use a browser.
 
-1. Clone this repository
-2. Build the docker container
-
-```
-$ docker build -t blockchain .
-```
-
-3. Run the container
-
-```
-$ docker run --rm -p 80:5000 blockchain
-```
-
-4. To add more instances, vary the public port number before the colon:
-
-```
-$ docker run --rm -p 81:5000 blockchain
-$ docker run --rm -p 82:5000 blockchain
-$ docker run --rm -p 83:5000 blockchain
-```
-
-## Installation (C# Implementation)
-
-1. Install a free copy of Visual Studio IDE (Community Edition):
-https://www.visualstudio.com/vs/
-
-2. Once installed, open the solution file (BlockChain.sln) using the File > Open > Project/Solution menu options within Visual Studio.
-
-3. From within the "Solution Explorer", right click the BlockChain.Console project and select the "Set As Startup Project" option.
-
-4. Click the "Start" button, or hit F5 to run. The program executes in a console window, and is controlled via HTTP with the same commands as the Python version.
-
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
+## TODO
+    * Make miner nodes cooperate to find proof.
+    * Make it so the transactions are not removed from the pool while composed into blocks. Only when a block has been mined.
+    * Change the transaction pool from a list to a dictionary to allow faster lookups and deletions.
+    * Make the program exit cleaner when CTRL-C is pressed.
