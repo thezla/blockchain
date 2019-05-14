@@ -217,43 +217,6 @@ class Blockchain:
         block_string = json.dumps(block, sort_keys=True).encode()
         return hashlib.sha256(block_string).hexdigest()
 
-    '''
-    def proof_of_work(self, last_block):
-        """
-        Simple Proof of Work Algorithm:
-
-         - Find a number p' such that hash(pp') contains leading 4 zeroes
-         - Where p is the previous proof, and p' is the new proof
-         
-        :param last_block: <dict> last Block
-        :return: <int>
-        """
-
-        last_proof = last_block['proof']
-        last_hash = self.hash(last_block)
-
-        proof = 0
-        while self.valid_proof(last_proof, proof, last_hash) is False:
-            proof += 1
-        # Simulated mining
-        sleep(random.randint(1,4))
-        return proof
-
-    @staticmethod
-    def valid_proof(last_proof, proof, last_hash):
-        """
-        Validates the Proof
-
-        :param last_proof: <int> Previous Proof
-        :param proof: <int> Current Proof
-        :param last_hash: <str> The hash of the Previous Block
-        :return: <bool> True if correct, False if not.
-        """
-
-        guess = f'{last_proof}{proof}{last_hash}'.encode()
-        guess_hash = hashlib.sha256(guess).hexdigest()
-        return guess_hash[:2] == "00"           # Hash made easy to simulate mining
-        '''
 
 # Instantiate the Node
 app = Flask(__name__)
