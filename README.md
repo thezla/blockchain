@@ -30,7 +30,7 @@ $ pipenv install
 
 5. Run a cluster of miners:
     * Start a manager node: `$ pipenv run manager.py -p 5000`, where -p is the port, default IP is 0.0.0.0
-    * To start a slave node you have to send a HTTP/GET request to the manager node's endpoint, e.g. "0.0.0.0:5000/cluster/add_miner". We would recommend the application PostMan for sending requests. You can also use a browser.
+    * To start a slave node you have to send a HTTP/GET request to the manager node's endpoint, e.g. "http://0.0.0.0:5000/cluster/add_miner". We would recommend the application PostMan for sending requests. You can also use a browser.
 
 ## TODO
 * Make miner nodes cooperate to find proof.
