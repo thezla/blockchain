@@ -15,7 +15,8 @@ from flask import Flask, jsonify, request
 
 class Blockchain:
     def __init__(self):
-        self.current_transactions = []
+        self.current_transactions_l = []
+        self.current_transactions = dict()
         self.chain = []
         self.nodes = set()
         self.slave_nodes = set()
@@ -123,25 +124,16 @@ class Blockchain:
     def compose_block_transactions(self):
         # Max size of block in "kilobytes"
         max_size = 2000
-
         block_size = 0
         block_transactions = []
-        if self.chain:
-            while True:
-                if self.current_transactions:
-                    transaction_size = self.current_transactions[0]['size']
-                    if (transaction_size + block_size) <= max_size:
-                        block_transactions.append(self.current_transactions[0])
-                        del self.current_transactions[0]
-                        block_size += transaction_size
-                    else:
-                        break
-                else:
-                    # Put transactions back in front of queue
-                    for e in reversed(block_transactions):
-                        self.current_transactions.insert(0, e)
-                    return []
-        return block_transactions
+
+        for identifier, transaction in self.current_transactions.items():
+            transaction_size = transaction['size']
+            if (transaction_size + block_size) > max_size:
+                return block_transactions
+            else:
+                block_transactions.append(transaction)
+                block_size += transaction_size
 
     def add_block(self, block):
         """
@@ -154,10 +146,8 @@ class Blockchain:
         # Ensure we are the longest chain
         if self.resolve_conflicts():
             self.chain.append(block)
-            for t in current_transactions:
-                for b_t in block['transactions']:
-                    if b_t['id'] == t['id']:
-                        del t
+            for transaction in block['transactions']:
+                self.current_transactions.pop(transaction['id'])
             start_cluster()
             return block
     
@@ -194,13 +184,14 @@ class Blockchain:
         :param amount: Amount
         :return: The index of the Block that will hold this transaction
         """
-        self.current_transactions.append({
+        transaction_id = str(uuid4()).replace('-', '')
+        self.current_transactions[transaction_id] = {
             'sender': sender,
             'recipient': recipient,
             'amount': amount,
             'size': random.randint(10,100),         # Simulated size in kilobytes
-            'id': str(uuid4()).replace('-', '')     # Unique ID
-        })
+            'id': transaction_id                    # Unique ID
+        }
 
 
     # TODO: Fixa transaktionssync
@@ -472,7 +463,7 @@ def start_cluster():
 
 
 # Tells cluster to stop mining
-@app.route('/cluster/stop', method=['GET'])
+@app.route('/cluster/stop', methods=['GET'])
 def stop_cluster():
     for miner in blockchain.slave_nodes:
         requests.get('http://'+miner+'/stop')
@@ -497,7 +488,7 @@ def generate_transactions():
 
 
 # Initialization --------------------
-# Activate syncing of node lists
+# Activate syncing of manager node list
 sync_nodes()
 
 
