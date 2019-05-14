@@ -33,7 +33,7 @@ $ pipenv install
     * To start a slave node you have to send a HTTP/GET request to the manager node's endpoint, e.g. "0.0.0.0:5000/cluster/add_miner". We would recommend the application PostMan for sending requests. You can also use a browser.
 
 ## TODO
-    * Make miner nodes cooperate to find proof.
-    * Make it so the transactions are not removed from the pool while composed into blocks. Only when a block has been mined.
-    * Change the transaction pool from a list to a dictionary to allow faster lookups and deletions.
-    * Make the program exit cleaner when CTRL-C is pressed.
+* Make miner nodes cooperate to find proof.
+* Make it so the transactions are not removed from the pool while composed into blocks. Only when a block has been mined.
+* Change the transaction pool from a list to a dictionary to allow faster lookups and deletions.
+* Make the program exit cleaner when CTRL-C is pressed.
