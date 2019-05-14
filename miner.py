@@ -92,7 +92,7 @@ class Miner:
         guess_hash = hashlib.sha256(guess).hexdigest()
         return guess_hash[:2] == "00"           # Hash made easy to simulate mining
     
-    def mine(self):
+    def mine(self, manager_node):
         # Compose list of transactions of block
         block_transactions = self.current_transactions
         if block_transactions and self.is_mining:
@@ -112,8 +112,8 @@ class Miner:
                     'recipient': self.node_identifier,
                     'amount': 1
                 }
-                requests.post(url=self.manager_node+'/slave/done', json=[block, who])
-                requests.post(url=self.manager_node+'/transactions/new', json=payload)
+                requests.post(url=manager_node+'/slave/done', json=[block, who])
+                requests.post(url=manager_node+'/transactions/new', json=payload)
                 miner.is_mining = False
 
         miner.current_transactions = []
@@ -176,7 +176,7 @@ def add_block():
     miner.current_transactions = values['transactions']
     miner.last_block = values['last_block']
 
-    miner.mine()
+    miner.mine(miner.manager_node)
 
     '''
     async_task = Mine(task_id=1)

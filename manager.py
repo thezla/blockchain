@@ -15,7 +15,6 @@ from flask import Flask, jsonify, request
 
 class Blockchain:
     def __init__(self):
-        self.current_transactions_l = []
         self.current_transactions = dict()
         self.chain = []
         self.nodes = set()
@@ -242,8 +241,8 @@ class Manage(threading.Thread):
             'transactions': blockchain.compose_block_transactions(),
             'last_block': blockchain.last_block()
         }
-        for miner in blockchain.slave_nodes:
-            requests.post(url='http://'+miner+'/start', json=payload)
+        for node in blockchain.slave_nodes:
+            requests.post(url='http://'+node+'/start', json=payload)
 
 
 class NewMiner(threading.Thread):
@@ -428,8 +427,8 @@ def start_cluster():
 # Tells cluster to stop mining
 @app.route('/cluster/stop', methods=['GET'])
 def stop_cluster():
-    for miner in blockchain.slave_nodes:
-        requests.get('http://'+miner+'/stop')
+    for node in blockchain.slave_nodes:
+        requests.get('http://'+node+'/stop')
     return 'Cluster mining deactivated!', 200
 
 
