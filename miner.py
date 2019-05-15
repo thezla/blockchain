@@ -50,6 +50,7 @@ class Miner:
         Creates a SHA-256 hash of a Block
 
         :param block: Block
+        :return <sha256 hash>
         """
 
         # We must make sure that the Dictionary is Ordered, or we'll have inconsistent hashes
@@ -72,11 +73,11 @@ class Miner:
 
         proof = 0
         while self.is_mining:
-            if self.valid_proof(last_proof, proof, last_hash) is True:
+            if self.valid_proof(last_proof, proof, last_hash):
                 return proof
             else:
                 proof += 1
-            sleep(random.randint(1,4))            
+            sleep(random.randint(1,4))
         return -1
 
     @staticmethod
@@ -92,9 +93,16 @@ class Miner:
 
         guess = f'{last_proof}{proof}{last_hash}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
-        return guess_hash[:2] == "00"           # Hash made easy to simulate mining
+        #return guess_hash[:2] == "00"
+        return True           # Hash made easy to simulate mining
     
     def mine(self, manager_node):
+        '''
+        Starts mining process
+
+        :param manager_node <string> Manager node of miner
+        :return <bool> True if managed to mine block and it was included in the chain, False if not
+        '''
         # Compose list of transactions of block
         block_transactions = self.current_transactions
         if block_transactions:
@@ -114,11 +122,12 @@ class Miner:
                         'recipient': self.node_identifier,
                         'amount': 1
                     }
-                    requests.post(url=manager_node+'/slave/done', json=[block, who])
-                    requests.post(url=manager_node+'/transactions/new', json=payload)
-                    return True
-
-        miner.current_transactions = []
+                    
+                    if requests.post(url=manager_node+'/slave/done', json=[block, who]).status_code == 200:
+                        requests.post(url=manager_node+'/transactions/new', json=payload)   # Reward miner for block
+                        miner.current_transactions = []
+                        miner.last_block = dict()
+                        return True
         miner.last_block = dict()
         return False
 
@@ -177,14 +186,18 @@ def start_mining():
     if not all(k in values for k in required):
         return 'Missing values', 400
 
-    miner.current_transactions = values['transactions']
-    miner.last_block = values['last_block']
+    if values != None:
+        miner.current_transactions = values['transactions']
+        miner.last_block = values['last_block']
 
-    if miner.mine(miner.manager_node):
-        response = {'message': 'Block found, stopped mining'}
-    else:
-        response = {'message': 'Block not found, stopped mining'}
-    return jsonify(response), 200
+        if miner.mine(miner.manager_node):
+            response = {'message': 'Block found, stopped mining'}
+        else:
+            response = {'message': 'Block not found, stopped mining'}
+        return jsonify(response), 200
+
+    miner.current_transactions = []
+    miner.last_block = dict()
 
     '''
     async_task = Mine(task_id=1)
@@ -216,7 +229,6 @@ def get_transactions():
 def start(self, address='http://0.0.0.0', port=6000, manager_address='http://0.0.0.0:5000'):
     miner.manager_node = manager_address
     miner.address = f'{address}:{port}'
-    '{}:{}{}'.format(address, address, port)
 
     # Start flask app
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, threaded=False)

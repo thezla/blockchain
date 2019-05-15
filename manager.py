@@ -57,6 +57,24 @@ class Blockchain:
                 if node != node_address:
                     response = requests.post(url=f'http://{node}/nodes/register', json=payload, headers=headers)
 
+
+    @staticmethod
+    def valid_proof(last_proof, proof, last_hash):
+        """
+        Validates the Proof
+
+        :param last_proof: <int> Previous Proof
+        :param proof: <int> Current Proof
+        :param last_hash: <str> The hash of the Previous Block
+        :return: <bool> True if correct, False if not.
+        """
+
+        guess = f'{last_proof}{proof}{last_hash}'.encode()
+        guess_hash = hashlib.sha256(guess).hexdigest()
+        #return guess_hash[:2] == "00"
+        return True           # Hash made easy to simulate mining
+    
+
     def valid_chain(self, chain):
         """
         Determine if a given blockchain is valid
@@ -79,12 +97,12 @@ class Blockchain:
                 return False
 
             # Check that the Proof of Work is correct
+            # TODO: FIX!!!!!!!!!
             if not self.valid_proof(last_block['proof'], block['proof'], last_block_hash):
                 return False
 
             last_block = block
             current_index += 1
-
         return True
 
     def resolve_conflicts(self):
@@ -133,29 +151,24 @@ class Blockchain:
             else:
                 block_transactions.append(transaction)
                 block_size += transaction_size
+        return []
 
     def add_block(self, block):
         """
-        Create a new Block in the Blockchain
+        Add a new Block to the Blockchain
 
-        :param proof: The proof given by the Proof of Work algorithm
-        :param previous_hash: Hash of previous Block
-        :return: New Block
+        :param block: The block to add
+        :return: Block that was added
         """
         # Ensure we are the longest chain
         self.resolve_conflicts()
         self.chain.append(block)
         for transaction in block['transactions']:
-            self.current_transactions.pop(transaction['id'])
+            if transaction['id'] in self.current_transactions:
+                self.current_transactions.pop(transaction['id'])
         start_cluster()
         return block
-    
-    def start_cluster_mining():
-        pass
 
-    def stop_cluster_mining():
-        pass
-    
     def new_genesis_block(self, proof, previous_hash, block_transactions):
         if not self.chain:
             block_size = 0
@@ -237,6 +250,7 @@ class Manage(threading.Thread):
         threading.Thread.__init__(self)
         self.task_id = task_id
     
+    # TODO: Sometimes, blockchain object == None, don't know why
     def run(self):
         payload = {
             'transactions': blockchain.compose_block_transactions(),
@@ -340,11 +354,11 @@ def slave_done():
     block = values[0]
     stop_cluster()
     global block_found
-    if not block_found:
+    if not block_found:     # Ignore all requests except first one
         block_found = True
         blockchain.add_block(block)
         return 'Block recieved, stopping mining', 200
-    return 'Block already found, stopping mining', 200
+    return 'Block already found, stopping mining', 400
 
 @app.route('/chain', methods=['GET'])
 def full_chain():
@@ -477,4 +491,4 @@ if __name__ == '__main__':
     node_address = address
 
     # Start flask app
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, threaded=False)
