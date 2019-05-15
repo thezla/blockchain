@@ -143,12 +143,12 @@ class Blockchain:
         :return: New Block
         """
         # Ensure we are the longest chain
-        if self.resolve_conflicts():
-            self.chain.append(block)
-            for transaction in block['transactions']:
-                self.current_transactions.pop(transaction['id'])
-            start_cluster()
-            return block
+        self.resolve_conflicts()
+        self.chain.append(block)
+        for transaction in block['transactions']:
+            self.current_transactions.pop(transaction['id'])
+        start_cluster()
+        return block
     
     def start_cluster_mining():
         pass
@@ -200,9 +200,7 @@ class Blockchain:
 
     #@property
     def last_block(self):
-        if self.chain:
-            return self.chain[-1]
-        return 0
+        return self.chain[-1]
 
     @staticmethod
     def hash(block):
@@ -229,6 +227,9 @@ blockchain = Blockchain()
 
 # Activates / Deactivates node list syncing process
 is_syncing = True
+
+# For filtering of requests from miners
+block_found = False
 
 
 class Manage(threading.Thread):
@@ -338,8 +339,12 @@ def slave_done():
     finder = values[1]['node']
     block = values[0]
     stop_cluster()
-    blockchain.add_block(block)
-
+    global block_found
+    if not block_found:
+        block_found = True
+        blockchain.add_block(block)
+        return 'Block recieved, stopping mining', 200
+    return 'Block already found, stopping mining', 200
 
 @app.route('/chain', methods=['GET'])
 def full_chain():
@@ -415,13 +420,17 @@ def add_miner():
 # Tells cluster to start mining
 @app.route('/cluster/start', methods=['GET'])
 def start_cluster():
-    async_task = Manage(task_id=4)
-    try:
-        with app.test_request_context():
-            async_task.start()
-    except RuntimeError:
-        return 'Could not start cluster mining', 400
-    return 'Cluster mining initiated!', 200
+    if blockchain.slave_nodes:
+        global block_found
+        block_found = False
+        async_task = Manage(task_id=4)
+        try:
+            with app.test_request_context():
+                async_task.start()
+        except RuntimeError:
+            return 'Cluster mining already started', 400
+        return 'Cluster mining initiated!', 200
+    return 'No nodes in cluster', 400
 
 
 # Tells cluster to stop mining
