@@ -227,6 +227,14 @@ class Blockchain:
         block_string = json.dumps(block, sort_keys=True).encode()
         return hashlib.sha256(block_string).hexdigest()
 
+    def start_mining(self):
+        payload = {
+            'transactions': self.compose_block_transactions(),
+            'last_block': self.last_block()
+        }
+        for node in self.slave_nodes:
+            requests.post(url='http://'+node+'/start', json=payload)
+
 
 # Instantiate the Node
 app = Flask(__name__)
@@ -243,6 +251,8 @@ is_syncing = True
 
 # For filtering of requests from miners
 block_found = False
+waiting_for_response = False
+cluster_running = False
 
 
 class Manage(threading.Thread):
@@ -252,12 +262,24 @@ class Manage(threading.Thread):
     
     # TODO: Sometimes, blockchain object == None, don't know why
     def run(self):
-        payload = {
-            'transactions': blockchain.compose_block_transactions(),
-            'last_block': blockchain.last_block()
-        }
-        for node in blockchain.slave_nodes:
-            requests.post(url='http://'+node+'/start', json=payload)
+        global waiting_for_response
+        global block_found
+        while True:
+            if cluster_running:
+                if not waiting_for_response and not block_found:
+                    payload = {
+                        'transactions': blockchain.compose_block_transactions(),
+                        'last_block': blockchain.last_block()
+                    }
+                    for node in blockchain.slave_nodes:
+                        requests.post(url='http://'+node+'/start', json=payload)
+                    waiting_for_response = True
+                # Miners are done, start on another block
+                elif block_found:
+                    waiting_for_response = False
+                    block_found = False
+            else:
+                sleep(0.1)
 
 
 class NewMiner(threading.Thread):
@@ -278,9 +300,10 @@ class Sync(threading.Thread):
         self.task_id = task_id
 
     def run(self):
-        while is_syncing:
-            blockchain.resolve_nodes(node_address)
-            sleep(5)
+        while True:
+            if is_syncing:
+                blockchain.resolve_nodes(node_address)
+                sleep(5)
 
 
 @app.route('/sync', methods=['GET'])
@@ -288,6 +311,7 @@ def sync_nodes():
     global is_syncing
     is_syncing = True
     async_task = Sync(task_id=2)
+    async_task.setName('Syncing node lists')
     try:
         with app.test_request_context():
             async_task.start()
@@ -357,8 +381,9 @@ def slave_done():
     if not block_found:     # Ignore all requests except first one
         block_found = True
         blockchain.add_block(block)
-        return 'Block recieved, stopping mining', 200
-    return 'Block already found, stopping mining', 400
+        return 'Block recieved, restarting mining', 200
+    return 'Block already found, restarting mining', 400
+
 
 @app.route('/chain', methods=['GET'])
 def full_chain():
@@ -421,6 +446,7 @@ def get_cluster():
 @app.route('/cluster/add_miner', methods=['GET'])
 def add_miner():
     async_task = NewMiner(task_id=3)
+    async_task.setName(f'New Miner: 0.0.0.0:{6000+len(blockchain.slave_nodes)}')
     try:
         with app.test_request_context():
             async_task.start()
@@ -437,12 +463,7 @@ def start_cluster():
     if blockchain.slave_nodes:
         global block_found
         block_found = False
-        async_task = Manage(task_id=4)
-        try:
-            with app.test_request_context():
-                async_task.start()
-        except RuntimeError:
-            return 'Cluster mining already started', 400
+        cluster_running = True
         return 'Cluster mining initiated!', 200
     return 'No nodes in cluster', 400
 
@@ -452,6 +473,7 @@ def start_cluster():
 def stop_cluster():
     for node in blockchain.slave_nodes:
         requests.get('http://'+node+'/stop')
+    cluster_running = False
     return 'Cluster mining deactivated!', 200
 
 
@@ -469,12 +491,18 @@ def generate_transactions():
             recipient = random.randint(1,100)
         
         blockchain.new_transaction(sender, recipient, amount)
-    return '{} transactions generated!'.format(number)
+    return f'{number} transactions generated!'
 
 
 # Initialization --------------------
 # Activate syncing of manager node list
 sync_nodes()
+
+# Activate manage thread
+async_task = Manage(task_id=4)
+async_task.setName('Manage Miners')
+with app.test_request_context():
+    async_task.start()
 
 
 if __name__ == '__main__':
@@ -486,7 +514,7 @@ if __name__ == '__main__':
     port = args.port
 
     # Add own address to node list
-    address = 'http://0.0.0.0:{}'.format(port)
+    address = f'http://0.0.0.0:{port}'
     blockchain.register_node(address)
     node_address = address
 

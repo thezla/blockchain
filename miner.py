@@ -106,8 +106,8 @@ class Miner:
         # Compose list of transactions of block
         block_transactions = self.current_transactions
         if block_transactions:
-            # We run the proof of work algorithm to get the next proof...
             last_block = self.last_block
+            # Enter proof_of_work loop to find proof with algorithm
             proof = self.proof_of_work(last_block)
             if proof > -1:
                 # Forge the new Block by adding it to the chain
@@ -128,6 +128,7 @@ class Miner:
                         miner.current_transactions = []
                         miner.last_block = dict()
                         return True
+        miner.current_transactions = []
         miner.last_block = dict()
         return False
 
@@ -135,6 +136,57 @@ class Miner:
 # Instantiate the Node
 app = Flask(__name__)
 miner = Miner()
+
+
+class Mine(threading.Thread):
+    def __init__(self, task_id):
+        threading.Thread.__init__(self)
+        self.task_id = task_id
+
+        self._return = False
+
+    def run(self):
+        '''
+        Starts mining process
+
+        :param manager_node <string> Manager node of miner
+        :return <bool> True if managed to mine block and it was included in the chain, False if not
+        '''
+        # Compose list of transactions of block
+        block_transactions = miner.current_transactions
+        if block_transactions:
+            last_block = miner.last_block
+            # Enter proof_of_work loop to find proof with algorithm
+            proof = miner.proof_of_work(last_block)
+            if proof > -1:
+                # Forge the new Block by adding it to the chain
+                previous_hash = miner.hash(last_block)
+                block = miner.new_block(proof, previous_hash, block_transactions, miner.node_identifier, last_block)
+                if block != None:
+                    who = {'node': miner.address}
+                    # We must receive a reward for finding the proof.
+                    # The sender is "0" to signify that this node has mined a new coin.
+                    payload = {
+                        'sender': '0',
+                        'recipient': miner.node_identifier,
+                        'amount': 1
+                    }
+                    
+                    if requests.post(url=miner.manager_node+'/slave/done', json=[block, who]).status_code == 200:
+                        requests.post(url=miner.manager_node+'/transactions/new', json=payload)   # Reward miner for block
+                        miner.current_transactions = []
+                        miner.last_block = dict()
+                        self._return = True
+        else:
+            self._return = False
+        miner.current_transactions = []
+        miner.last_block = dict()
+    
+    def join(self):
+        threading.Thread.join(self)
+        return self._return
+
+
 
 '''
 class Mine(threading.Thread):
@@ -179,6 +231,7 @@ class Mine(threading.Thread):
 @app.route('/start', methods=['POST'])
 def start_mining():
     miner.is_mining = True
+    mine_result = False
     values = request.get_json()
 
     # Check that the required fields are in the POST'ed data
@@ -190,7 +243,11 @@ def start_mining():
         miner.current_transactions = values['transactions']
         miner.last_block = values['last_block']
 
-        if miner.mine(miner.manager_node):
+        # If block was mined correctly
+        async_task = Mine(task_id=1)
+        async_task.setName('Mine proof')
+        async_task.start()
+        if async_task.join():
             response = {'message': 'Block found, stopped mining'}
         else:
             response = {'message': 'Block not found, stopped mining'}
@@ -198,16 +255,7 @@ def start_mining():
 
     miner.current_transactions = []
     miner.last_block = dict()
-
-    '''
-    async_task = Mine(task_id=1)
-    try:
-        with app.test_request_context():
-            async_task.start()
-        return 'Started mining process', 200
-    except RuntimeError:
-        return 'Node is already mining', 400
-    '''
+    return jsonify({'message': 'Transaction list was None, stopped mining'}), 400
 
 
 @app.route('/stop', methods=['GET'])
@@ -224,6 +272,10 @@ def get_transactions():
     }
     return jsonify(response), 200
 
+
+@app.route('/mining', methods=['GET'])
+def mining():
+    return miner.is_mining, 200
 
 # Starts a miner node
 def start(self, address='http://0.0.0.0', port=6000, manager_address='http://0.0.0.0:5000'):
