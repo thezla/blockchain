@@ -96,15 +96,15 @@ class Miner:
         return guess_hash[:2] == "00"         # Hash made easy to simulate mining
 
     
-    @classmethod
+    #@classmethod
     def get_address(self):
         return self.node_address
 
-    @classmethod
+    #@classmethod
     def get_manager_node(self):
         return self.manager_node
     
-    @classmethod
+    #@classmethod
     def get_node_id(self):
         return self.node_identifier
 
@@ -145,9 +145,9 @@ class Mine(Thread):
                         'recipient': miner.node_identifier,
                         'amount': 1
                     }
-                    r = requests.post(url=f'http://{miner.get_manager_node()}/slave/done', json=block)
+                    r = requests.post(url=f'{miner.manager_node}/slave/done', json=block)
                     if r.status_code == requests.codes.ok:
-                        requests.post(url=f'http://{miner.get_manager_node()}/transactions/new', json=payload)   # Reward miner for block
+                        requests.post(url=f'{miner.manager_node}/transactions/new', json=payload)   # Reward miner for block
                         self.completed = True
 
         miner.current_transactions = []
@@ -219,13 +219,13 @@ def set_manager():
 def set_address():
     node_address = request.get_json()
     miner.node_address = node_address
-    miner.manager_node = request.host
-    return f'Node address set to {node_address}, manager address set to {request.host}', 200
+    return f'Node address set to {node_address}', 200
 
 
 @app.route('/address', methods=['GET'])
 def get_address():
     return f'Self: {miner.node_address}, Manager: {miner.manager_node}', 200
+
 
 # Starts a miner node
 def start(self, address='http://0.0.0.0', port=6000, manager_address='http://0.0.0.0:5000'):

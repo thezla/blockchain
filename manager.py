@@ -10,6 +10,7 @@ import datetime
 import subprocess
 import miner
 import os
+from pathlib import Path
 
 import requests
 from flask import Flask, jsonify, request
@@ -21,12 +22,7 @@ class Blockchain:
         self.nodes = set()
         self.slave_nodes = set()
         self.number_of_nodes = 0
-        self_address = ""
-
-        # Set own IP address
-        cwd = os.getcwd()
-        with open(f'{cwd}/cluster_config.txt', 'r') as f:
-            self.address = f.readline().strip()
+        self.address = ""
 
         # Create the genesis block
         self.new_genesis_block(previous_hash='1', proof=100, block_transactions=[])
@@ -472,9 +468,21 @@ def add_miner():
 # Sets up miner's and their manager's adresses
 @app.route('/cluster/setup', methods=['GET'])
 def setup_cluster():
+    # Set own IP address
+    cwd = os.path.dirname(os.path.abspath(__file__))
+    p = Path(cwd)
+    path = p / 'cluster_config'
+    with open(path, 'r') as f:
+        manager.address = f.readline().strip()
+        f.close()
+    with open(path, 'w') as f:
+        f.write('')
+        f.close()
+
     for node in manager.slave_nodes:
         requests.post(url=f'http://{node}/set_address', json=node)
-        return 'Cluster configured', 200
+        requests.post(url=f'http://{node}/set_manager_address', json=manager.address)
+    return 'Cluster configured', 200
 
 
 # Tells cluster to start mining
@@ -539,7 +547,6 @@ with app.test_request_context():
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
-    import os
 
     parser = ArgumentParser()
     parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
@@ -549,8 +556,13 @@ if __name__ == '__main__':
     # Add own address to node list
     address = f'http://0.0.0.0:{port}'
 
-    cwd = os.getcwd()
-    with open(f'{cwd}/cluster_config', 'w+') as f:
+    manager.register_node(address)
+
+    cwd = os.path.dirname(os.path.abspath(__file__))
+    p = Path(cwd)
+    path = p / f'cluster_config'
+
+    with open(path, 'w+') as f:
         f.write(address)
     
     # Start Flask app
