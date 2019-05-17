@@ -95,6 +95,19 @@ class Miner:
         guess_hash = hashlib.sha256(guess).hexdigest()
         return guess_hash[:2] == "00"         # Hash made easy to simulate mining
 
+    
+    @classmethod
+    def get_address(self):
+        return self.node_address
+
+    @classmethod
+    def get_manager_node(self):
+        return self.manager_node
+    
+    @classmethod
+    def get_node_id(self):
+        return self.node_identifier
+
 
 # Instantiate the Node
 app = Flask(__name__)
@@ -132,19 +145,16 @@ class Mine(Thread):
                         'recipient': miner.node_identifier,
                         'amount': 1
                     }
-                    manager_url = miner.manager_node+'/slave/done'
-                    r = requests.post(url=manager_url, json=block)
+                    r = requests.post(url=f'http://{miner.get_manager_node()}/slave/done', json=block)
                     if r.status_code == requests.codes.ok:
-                        requests.post(url=miner.manager_node+'/transactions/new', json=payload)   # Reward miner for block
-                        miner.current_transactions = []
-                        miner.last_block = dict()
+                        requests.post(url=f'http://{miner.get_manager_node()}/transactions/new', json=payload)   # Reward miner for block
                         self.completed = True
+
         miner.current_transactions = []
         miner.last_block = dict()
-        self.completed = False
 
     def join(self):
-        #Thread.join(self)
+        Thread.join(self)
         return self.completed
 
 
@@ -166,7 +176,8 @@ def start_mining():
         async_task = Mine(task_id=1)
         async_task.setName('Mine proof')
         async_task.start()
-        if async_task.join():
+        b = async_task.join()
+        if b:
             response = {'message': 'Block found, stopped mining'}
         else:
             response = {'message': 'Block not found, stopped mining'}
@@ -196,10 +207,30 @@ def get_transactions():
 def mining():
     return miner.is_mining, 200
 
+
+@app.route('/set_manager_address', methods=['POST'])
+def set_manager():
+    manager_address = request.get_json()
+    miner.manager_node = manager_address
+    return f'Manager node address set to {manager_address}', 200
+
+
+@app.route('/set_address', methods=['POST'])
+def set_address():
+    node_address = request.get_json()
+    miner.node_address = node_address
+    miner.manager_node = request.host
+    return f'Node address set to {node_address}, manager address set to {request.host}', 200
+
+
+@app.route('/address', methods=['GET'])
+def get_address():
+    return f'Self: {miner.node_address}, Manager: {miner.manager_node}', 200
+
 # Starts a miner node
 def start(self, address='http://0.0.0.0', port=6000, manager_address='http://0.0.0.0:5000'):
-    miner.manager_node = manager_address
-    miner.address = f'{address}:{port}'
+    #miner.set_manager_node(manager_address)
+    #miner.set_address(f'{address}:{port}')
 
     # Start flask app
     app.run(host='0.0.0.0', port=port, threaded=False)

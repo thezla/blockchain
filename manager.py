@@ -9,6 +9,7 @@ from threading import Thread
 import datetime
 import subprocess
 import miner
+import os
 
 import requests
 from flask import Flask, jsonify, request
@@ -20,7 +21,12 @@ class Blockchain:
         self.nodes = set()
         self.slave_nodes = set()
         self.number_of_nodes = 0
-        self.address = ""
+        self_address = ""
+
+        # Set own IP address
+        cwd = os.getcwd()
+        with open(f'{cwd}/cluster_config.txt', 'r') as f:
+            self.address = f.readline().strip()
 
         # Create the genesis block
         self.new_genesis_block(previous_hash='1', proof=100, block_transactions=[])
@@ -43,6 +49,7 @@ class Blockchain:
             self.nodes.add(parsed_url.path)
         else:
             raise ValueError('Invalid URL')
+
 
     def resolve_nodes(self, node_address):
         """
@@ -296,6 +303,8 @@ class NewMiner(Thread):
         manager.slave_nodes.add(address)
         #global node_address
         miner.start('http://0.0.0.0', port=port, manager_address=manager.address)
+        # Set miner's manager node and own address
+        #requests.post(url=f'{address}/set_manager_address', json=manager.address)
 
 
 class Sync(Thread):
@@ -460,6 +469,14 @@ def add_miner():
     return 'Miner node created and added to cluster!', 200
 
 
+# Sets up miner's and their manager's adresses
+@app.route('/cluster/setup', methods=['GET'])
+def setup_cluster():
+    for node in manager.slave_nodes:
+        requests.post(url=f'http://{node}/set_address', json=node)
+        return 'Cluster configured', 200
+
+
 # Tells cluster to start mining
 @app.route('/cluster/start', methods=['GET'])
 def start_cluster():
@@ -481,7 +498,7 @@ def stop_cluster():
     global cluster_running
     cluster_running = False
     for node in manager.slave_nodes:
-        r = requests.get('http://'+node+'/stop')
+        r = requests.get(f'http://{node}/stop')
         if not r.status_code == requests.codes.ok:
             return f'Failed to deactivate miner {node} in cluster', 400
     return 'Cluster mining deactivated!', 200
@@ -504,6 +521,11 @@ def generate_transactions():
     return f'{number} transactions generated!'
 
 
+@app.route('/address', methods=['GET'])
+def get_address():
+    return f'{manager.address}', 200
+
+
 # Initialization --------------------
 # Activate syncing of manager node list
 sync_nodes()
@@ -517,6 +539,7 @@ with app.test_request_context():
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
+    import os
 
     parser = ArgumentParser()
     parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
@@ -525,10 +548,10 @@ if __name__ == '__main__':
 
     # Add own address to node list
     address = f'http://0.0.0.0:{port}'
-    manager.register_node(address)
-    # TODO: ADRESS BLIR TOM STRÄNG!!!!!!!!!!!!!
-    manager.address = address
-    #node_address = address
 
-    # Start flask app
+    cwd = os.getcwd()
+    with open(f'{cwd}/cluster_config', 'w+') as f:
+        f.write(address)
+    
+    # Start Flask app
     app.run(host='0.0.0.0', port=port, threaded=False)
