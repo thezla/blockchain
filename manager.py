@@ -5,7 +5,7 @@ from time import sleep
 from urllib.parse import urlparse
 from uuid import uuid4
 import random
-import threading
+from threading import Thread
 import datetime
 import subprocess
 import miner
@@ -20,6 +20,7 @@ class Blockchain:
         self.nodes = set()
         self.slave_nodes = set()
         self.number_of_nodes = 0
+        self.address = ""
 
         # Create the genesis block
         self.new_genesis_block(previous_hash='1', proof=100, block_transactions=[])
@@ -55,7 +56,7 @@ class Blockchain:
             for node in neighbors:
                 # Do not request node list from itself
                 if node != node_address:
-                    response = requests.post(url=f'http://{node}/nodes/register', json=payload, headers=headers)
+                    requests.post(url=f'http://{node}/nodes/register', json=payload, headers=headers)
 
 
     @staticmethod
@@ -77,9 +78,9 @@ class Blockchain:
 
     def valid_chain(self, chain):
         """
-        Determine if a given blockchain is valid
+        Determine if a given manager is valid
 
-        :param chain: A blockchain
+        :param chain: A manager
         :return: True if valid, False if not
         """
 
@@ -123,7 +124,7 @@ class Blockchain:
         for node in neighbours:
             response = requests.get(f'http://{node}/chain')
 
-            if response.status_code == 200:
+            if response.status_code == requests.codes.ok:
                 length = response.json()['length']
                 chain = response.json()['chain']
 
@@ -166,7 +167,6 @@ class Blockchain:
         for transaction in block['transactions']:
             if transaction['id'] in self.current_transactions:
                 self.current_transactions.pop(transaction['id'])
-        start_cluster()
         return block
 
     def new_genesis_block(self, proof, previous_hash, block_transactions):
@@ -204,6 +204,7 @@ class Blockchain:
             'size': random.randint(10,100),         # Simulated size in kilobytes
             'id': transaction_id                    # Unique ID
         }
+        return len(self.chain)+1
 
 
     # TODO: Fixa transaktionssync
@@ -241,10 +242,10 @@ app = Flask(__name__)
 
 # Generate a globally unique id for this node
 node_identifier = str(uuid4()).replace('-', '')
-node_address = ""
+#node_address = ""
 
 # Instantiate the Blockchain
-blockchain = Blockchain()
+manager = Blockchain()
 
 # Activates / Deactivates node list syncing process
 is_syncing = True
@@ -255,23 +256,25 @@ waiting_for_response = False
 cluster_running = False
 
 
-class Manage(threading.Thread):
+class Manage(Thread):
     def __init__(self, task_id):
-        threading.Thread.__init__(self)
+        Thread.__init__(self)
         self.task_id = task_id
     
-    # TODO: Sometimes, blockchain object == None, don't know why
+    # TODO: Sometimes, manager object == None, don't know why
     def run(self):
         global waiting_for_response
         global block_found
+        global cluster_running
+
         while True:
             if cluster_running:
                 if not waiting_for_response and not block_found:
                     payload = {
-                        'transactions': blockchain.compose_block_transactions(),
-                        'last_block': blockchain.last_block()
+                        'transactions': manager.compose_block_transactions(),
+                        'last_block': manager.last_block()
                     }
-                    for node in blockchain.slave_nodes:
+                    for node in manager.slave_nodes:
                         requests.post(url='http://'+node+'/start', json=payload)
                     waiting_for_response = True
                 # Miners are done, start on another block
@@ -282,27 +285,28 @@ class Manage(threading.Thread):
                 sleep(0.1)
 
 
-class NewMiner(threading.Thread):
+class NewMiner(Thread):
     def __init__(self, task_id):
-        threading.Thread.__init__(self)
+        Thread.__init__(self)
         self.task_id = task_id
     
     def run(self):
-        port = 6000+blockchain.number_of_nodes
-        address = '0.0.0.0:{}'.format(port)
-        blockchain.slave_nodes.add(address)
-        miner.start('http://0.0.0.0', port=port, manager_address=node_address)
+        port = 6000+manager.number_of_nodes
+        address = f'0.0.0.0:{port}'
+        manager.slave_nodes.add(address)
+        #global node_address
+        miner.start('http://0.0.0.0', port=port, manager_address=manager.address)
 
 
-class Sync(threading.Thread):
+class Sync(Thread):
     def __init__(self, task_id):
-        threading.Thread.__init__(self)
+        Thread.__init__(self)
         self.task_id = task_id
 
     def run(self):
         while True:
             if is_syncing:
-                blockchain.resolve_nodes(node_address)
+                manager.resolve_nodes(manager.address)
                 sleep(5)
 
 
@@ -328,7 +332,7 @@ def stop_syncing():
 
 
 @app.route('/transactions/new', methods=['POST'])
-def new_transaction():
+def add_transaction():
     values = request.get_json()
 
     # Check that the required fields are in the POST'ed data
@@ -337,17 +341,17 @@ def new_transaction():
         return 'Missing values', 400
 
     # Create a new Transaction
-    index = blockchain.new_transaction(values['sender'], values['recipient'], values['amount'])
+    index = manager.new_transaction(values['sender'], values['recipient'], values['amount'])
 
     response = {'message': f'Transaction will be added to Block {index}'}
-    return jsonify(response), 201
+    return jsonify(response), 200
 
 
 @app.route('/transactions', methods=['GET'])
 def get_transactions():
     response = {
-        'transactions': blockchain.current_transactions,
-        'size': len(blockchain.current_transactions)
+        'transactions': manager.current_transactions,
+        'size': len(manager.current_transactions)
     }
     return jsonify(response), 200
 
@@ -361,26 +365,25 @@ def sync_transactions(self):
         return "Error: Please supply a valid list of transactions", 400
 
     for trans in transactions:
-        if trans not in self.current_transactions:      #TODO: Bättre datastruktur, hashmap?
-            blockchain.new_transaction()
+        if trans not in self.current_transactions:
+            manager.new_transaction()
 
     response = {
         'message': 'New nodes have been added',
-        'total_nodes': list(blockchain.nodes),
+        'total_nodes': list(manager.nodes),
     }
     return jsonify(response), 201
 
 
 @app.route('/slave/done', methods=['POST'])
 def slave_done():
-    values = request.get_json()
-    finder = values[1]['node']
-    block = values[0]
-    stop_cluster()
     global block_found
     if not block_found:     # Ignore all requests except first one
         block_found = True
-        blockchain.add_block(block)
+        stop_cluster()
+        block = request.get_json()
+        manager.add_block(block)
+        start_cluster()
         return 'Block recieved, restarting mining', 200
     return 'Block already found, restarting mining', 400
 
@@ -388,8 +391,8 @@ def slave_done():
 @app.route('/chain', methods=['GET'])
 def full_chain():
     response = {
-        'chain': blockchain.chain,
-        'length': len(blockchain.chain),
+        'chain': manager.chain,
+        'length': len(manager.chain),
     }
     return jsonify(response), 200
 
@@ -397,7 +400,7 @@ def full_chain():
 @app.route('/nodes', methods=['GET'])
 def get_nodes():
     response = {
-        'nodes': list(blockchain.nodes)
+        'nodes': list(manager.nodes)
     }
     return jsonify(response), 200
 
@@ -411,69 +414,76 @@ def register_nodes():
         return "Error: Please supply a valid list of nodes", 400
 
     for node in nodes:
-        blockchain.register_node(node)
+        manager.register_node(node)
 
     response = {
         'message': 'New nodes have been added',
-        'total_nodes': list(blockchain.nodes),
+        'total_nodes': list(manager.nodes),
     }
     return jsonify(response), 201
 
 
 @app.route('/nodes/resolve', methods=['GET'])
 def consensus():
-    replaced = blockchain.resolve_conflicts()
+    replaced = manager.resolve_conflicts()
 
     if replaced:
         response = {
             'message': 'Our chain was replaced',
-            'new_chain': blockchain.chain
+            'new_chain': manager.chain
         }
     else:
         response = {
             'message': 'Our chain is authoritative',
-            'chain': blockchain.chain
+            'chain': manager.chain
         }
     return jsonify(response), 200
 
 
 @app.route('/cluster', methods=['GET'])
 def get_cluster():
-    return jsonify(list(blockchain.slave_nodes)), 200
+    return jsonify(list(manager.slave_nodes)), 200
 
 
 # Adds a miner node to cluster
 @app.route('/cluster/add_miner', methods=['GET'])
 def add_miner():
     async_task = NewMiner(task_id=3)
-    async_task.setName(f'New Miner: 0.0.0.0:{6000+len(blockchain.slave_nodes)}')
+    async_task.setName(f'New Miner: 0.0.0.0:{6000+len(manager.slave_nodes)}')
     try:
         with app.test_request_context():
             async_task.start()
     except RuntimeError:
         return 'Could not create a new miner', 400
 
-    blockchain.number_of_nodes = len(blockchain.slave_nodes)
+    manager.number_of_nodes = len(manager.slave_nodes)
     return 'Miner node created and added to cluster!', 200
 
 
 # Tells cluster to start mining
 @app.route('/cluster/start', methods=['GET'])
 def start_cluster():
-    if blockchain.slave_nodes:
-        global block_found
-        block_found = False
-        cluster_running = True
-        return 'Cluster mining initiated!', 200
-    return 'No nodes in cluster', 400
+    global cluster_running
+    global block_found
+
+    if not cluster_running:
+        if manager.slave_nodes:
+            block_found = False
+            cluster_running = True
+            return 'Cluster mining initiated!', 200
+        return 'Error: No nodes in cluster', 400
+    return 'Error: Cluster is already running', 400
 
 
 # Tells cluster to stop mining
 @app.route('/cluster/stop', methods=['GET'])
 def stop_cluster():
-    for node in blockchain.slave_nodes:
-        requests.get('http://'+node+'/stop')
+    global cluster_running
     cluster_running = False
+    for node in manager.slave_nodes:
+        r = requests.get('http://'+node+'/stop')
+        if not r.status_code == requests.codes.ok:
+            return f'Failed to deactivate miner {node} in cluster', 400
     return 'Cluster mining deactivated!', 200
 
 
@@ -490,7 +500,7 @@ def generate_transactions():
         while recipient == sender:
             recipient = random.randint(1,100)
         
-        blockchain.new_transaction(sender, recipient, amount)
+        manager.new_transaction(sender, recipient, amount)
     return f'{number} transactions generated!'
 
 
@@ -499,10 +509,10 @@ def generate_transactions():
 sync_nodes()
 
 # Activate manage thread
-async_task = Manage(task_id=4)
-async_task.setName('Manage Miners')
+manage_task = Manage(task_id=4)
+manage_task.setName('Manage Miners')
 with app.test_request_context():
-    async_task.start()
+    manage_task.start()
 
 
 if __name__ == '__main__':
@@ -515,8 +525,10 @@ if __name__ == '__main__':
 
     # Add own address to node list
     address = f'http://0.0.0.0:{port}'
-    blockchain.register_node(address)
-    node_address = address
+    manager.register_node(address)
+    # TODO: ADRESS BLIR TOM STRÄNG!!!!!!!!!!!!!
+    manager.address = address
+    #node_address = address
 
     # Start flask app
     app.run(host='0.0.0.0', port=port, threaded=False)

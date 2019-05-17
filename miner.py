@@ -5,7 +5,7 @@ from uuid import uuid4
 from time import sleep
 from urllib.parse import urlparse
 import random
-import threading
+from threading import Thread
 
 import requests
 from flask import Flask, jsonify, request
@@ -40,7 +40,7 @@ class Miner:
             'proof': proof,
             'previous_hash': previous_hash,
             'size': block_size,   # 2MB max size
-            'node': node_identifier
+            'node': node_identifier,
         }
         return block
         
@@ -77,7 +77,7 @@ class Miner:
                 return proof
             else:
                 proof += 1
-            sleep(random.randint(1,4))
+            #sleep(random.randint(1,4))
         return -1
 
     @staticmethod
@@ -93,44 +93,7 @@ class Miner:
 
         guess = f'{last_proof}{proof}{last_hash}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
-        #return guess_hash[:2] == "00"
-        return True           # Hash made easy to simulate mining
-    
-    def mine(self, manager_node):
-        '''
-        Starts mining process
-
-        :param manager_node <string> Manager node of miner
-        :return <bool> True if managed to mine block and it was included in the chain, False if not
-        '''
-        # Compose list of transactions of block
-        block_transactions = self.current_transactions
-        if block_transactions:
-            last_block = self.last_block
-            # Enter proof_of_work loop to find proof with algorithm
-            proof = self.proof_of_work(last_block)
-            if proof > -1:
-                # Forge the new Block by adding it to the chain
-                previous_hash = self.hash(last_block)
-                block = self.new_block(proof, previous_hash, block_transactions, self.node_identifier, last_block)
-                if block != None:
-                    who = {'node': self.address}
-                    # We must receive a reward for finding the proof.
-                    # The sender is "0" to signify that this node has mined a new coin.
-                    payload = {
-                        'sender': '0',
-                        'recipient': self.node_identifier,
-                        'amount': 1
-                    }
-                    
-                    if requests.post(url=manager_node+'/slave/done', json=[block, who]).status_code == 200:
-                        requests.post(url=manager_node+'/transactions/new', json=payload)   # Reward miner for block
-                        miner.current_transactions = []
-                        miner.last_block = dict()
-                        return True
-        miner.current_transactions = []
-        miner.last_block = dict()
-        return False
+        return guess_hash[:2] == "00"         # Hash made easy to simulate mining
 
 
 # Instantiate the Node
@@ -138,12 +101,11 @@ app = Flask(__name__)
 miner = Miner()
 
 
-class Mine(threading.Thread):
+class Mine(Thread):
     def __init__(self, task_id):
-        threading.Thread.__init__(self)
+        Thread.__init__(self)
         self.task_id = task_id
-
-        self._return = False
+        self.completed = False
 
     def run(self):
         '''
@@ -163,7 +125,6 @@ class Mine(threading.Thread):
                 previous_hash = miner.hash(last_block)
                 block = miner.new_block(proof, previous_hash, block_transactions, miner.node_identifier, last_block)
                 if block != None:
-                    who = {'node': miner.address}
                     # We must receive a reward for finding the proof.
                     # The sender is "0" to signify that this node has mined a new coin.
                     payload = {
@@ -171,67 +132,25 @@ class Mine(threading.Thread):
                         'recipient': miner.node_identifier,
                         'amount': 1
                     }
-                    
-                    if requests.post(url=miner.manager_node+'/slave/done', json=[block, who]).status_code == 200:
+                    manager_url = miner.manager_node+'/slave/done'
+                    r = requests.post(url=manager_url, json=block)
+                    if r.status_code == requests.codes.ok:
                         requests.post(url=miner.manager_node+'/transactions/new', json=payload)   # Reward miner for block
                         miner.current_transactions = []
                         miner.last_block = dict()
-                        self._return = True
-        else:
-            self._return = False
+                        self.completed = True
         miner.current_transactions = []
         miner.last_block = dict()
-    
+        self.completed = False
+
     def join(self):
-        threading.Thread.join(self)
-        return self._return
+        #Thread.join(self)
+        return self.completed
 
-
-
-'''
-class Mine(threading.Thread):
-    def __init__(self, task_id):
-        threading.Thread.__init__(self)
-        self.task_id = task_id
-
-    def run(self):
-        #while miner.is_mining:
-            #TODO: Sync transactions across network
-
-        # Compose list of transactions of block
-        block_transactions = miner.current_transactions
-        if block_transactions and self.is_mining:
-            # We run the proof of work algorithm to get the next proof...
-            last_block = miner.last_block
-            proof = miner.proof_of_work(last_block)
-
-            # Forge the new Block by adding it to the chain
-            previous_hash = miner.hash(last_block)
-            block = miner.new_block(proof, previous_hash, block_transactions, miner.node_identifier, last_block)
-            if block != None:
-                who = {'node': miner.address}
-
-                # We must receive a reward for finding the proof.
-                # The sender is "0" to signify that this node has mined a new coin.
-                payload = {
-                    'sender': '0',
-                    'recipient': miner.node_identifier,
-                    'amount': 1
-                }
-                requests.post(url=miner.manager_node+'/slave/done', json=[block, who])
-                requests.post(url=miner.manager_node+'/transactions/new', json=payload)
-                miner.is_mining = False
-        else:
-            miner.is_mining = False
-
-        miner.current_transactions = []
-        miner.last_block = dict()
-'''
 
 @app.route('/start', methods=['POST'])
 def start_mining():
     miner.is_mining = True
-    mine_result = False
     values = request.get_json()
 
     # Check that the required fields are in the POST'ed data
@@ -261,7 +180,7 @@ def start_mining():
 @app.route('/stop', methods=['GET'])
 def stop_mining():
     miner.is_mining = False
-    return 'Mining process stoppped in node: {}'.format(miner.node_address), 200
+    return f'Mining process stoppped in node: {miner.node_address}', 200
 
 
 @app.route('/transactions', methods=['GET'])
