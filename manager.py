@@ -21,7 +21,6 @@ class Blockchain:
         self.chain = []
         self.nodes = set()
         self.slave_nodes = set()
-        self.number_of_nodes = 0
         self.address = ''
 
         # Create the genesis block
@@ -297,12 +296,10 @@ class NewMiner(Thread):
         self.task_id = task_id
     
     def run(self):
-        port = 6000+manager.number_of_nodes
+        port = 6000+len(manager.slave_nodes)
         address = f'0.0.0.0:{port}'
         manager.slave_nodes.add(address)
-        miner.start('http://0.0.0.0', port=port, manager_address=manager.address)
-        # Set miner's manager node and own address
-        #requests.post(url=f'{address}/set_manager_address', json=manager.address)
+        miner.start(address='http://0.0.0.0', port=port, manager_address=manager.address)
 
 
 class Sync(Thread):
@@ -463,7 +460,6 @@ def add_miner():
     except RuntimeError:
         return 'Could not create a new miner', 400
 
-    manager.number_of_nodes = len(manager.slave_nodes)
     return 'Miner node created and added to cluster!', 200
 
 

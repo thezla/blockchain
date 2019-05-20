@@ -94,16 +94,9 @@ class Miner:
         guess = f'{last_proof}{proof}{last_hash}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
         return guess_hash[:2] == "00"         # Hash made easy to simulate mining
-
-    
-    def get_address(self):
-        return self.node_address
     
     def set_address(self, address):
         self.node_address = address
-
-    def get_manager_node(self):
-        return self.manager_node
     
     def set_manager_address(self, address):
         self.manager_node = address
@@ -231,8 +224,7 @@ def get_address():
 
 
 # Starts a miner node
-def start(self, address='http://0.0.0.0', port=6000, manager_address='http://0.0.0.0:5000'):
-    #miner.set_manager_node(manager_address)
+def start(address, port, manager_address):
     miner.set_address(f'{address}:{port}')
     miner.set_manager_address(f'{manager_address}')
 
