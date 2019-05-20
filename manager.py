@@ -127,16 +127,17 @@ class Blockchain:
 
         # Grab and verify the chains from all the nodes in our network
         for node in neighbours:
-            response = requests.get(f'http://{node}/chain')
+            if node != self.address:
+                response = requests.get(f'http://{node}/chain')
 
-            if response.status_code == requests.codes.ok:
-                length = response.json()['length']
-                chain = response.json()['chain']
+                if response.status_code == requests.codes.ok:
+                    length = response.json()['length']
+                    chain = response.json()['chain']
 
-                # Check if the length is longer and the chain is valid
-                if length >= max_length and self.valid_chain(chain):
-                    max_length = length
-                    new_chain = chain
+                    # Check if the length is longer and the chain is valid
+                    if length >= max_length and self.valid_chain(chain):
+                        max_length = length
+                        new_chain = chain
 
         # Replace our chain if we discovered a new, valid chain longer than ours
         if new_chain:
@@ -385,8 +386,8 @@ def sync_transactions(self):
 def slave_done():
     global block_found
     if not block_found:     # Ignore all requests except first one
-        block_found = True
         stop_cluster()
+        block_found = True
         block = request.get_json()
         manager.add_block(block)
         start_cluster()
@@ -497,7 +498,7 @@ def start_cluster():
 
     if not cluster_running:
         if manager.slave_nodes:
-            block_found = False
+            #block_found = False
             cluster_running = True
             return 'Cluster mining initiated!', 200
         return 'Error: No nodes in cluster', 400

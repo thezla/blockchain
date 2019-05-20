@@ -96,15 +96,18 @@ class Miner:
         return guess_hash[:2] == "00"         # Hash made easy to simulate mining
 
     
-    #@classmethod
     def get_address(self):
         return self.node_address
+    
+    def set_address(self, address):
+        self.node_address = address
 
-    #@classmethod
     def get_manager_node(self):
         return self.manager_node
     
-    #@classmethod
+    def set_manager_address(self, address):
+        self.manager_node = address
+    
     def get_node_id(self):
         return self.node_identifier
 
@@ -207,7 +210,7 @@ def get_transactions():
 def mining():
     return miner.is_mining, 200
 
-
+'''
 @app.route('/set_manager_address', methods=['POST'])
 def set_manager():
     manager_address = request.get_json()
@@ -220,7 +223,7 @@ def set_address():
     node_address = request.get_json()
     miner.node_address = node_address
     return f'Node address set to {node_address}', 200
-
+'''
 
 @app.route('/address', methods=['GET'])
 def get_address():
@@ -230,7 +233,8 @@ def get_address():
 # Starts a miner node
 def start(self, address='http://0.0.0.0', port=6000, manager_address='http://0.0.0.0:5000'):
     #miner.set_manager_node(manager_address)
-    #miner.set_address(f'{address}:{port}')
+    miner.set_address(f'{address}:{port}')
+    miner.set_manager_address(f'{manager_address}')
 
     # Start flask app
-    app.run(host='0.0.0.0', port=port, threaded=False)
+    app.run(host='0.0.0.0', port=port, threaded=True)
