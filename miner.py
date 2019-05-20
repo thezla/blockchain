@@ -12,9 +12,9 @@ from flask import Flask, jsonify, request
 
 class Miner:
     def __init__(self):
-        self.manager_node = ""
+        self.manager_node = ''
         self.node_identifier = str(uuid4()).replace('-', '')
-        self.node_address = ""
+        self.node_address = ''
         self.current_transactions = []
         self.last_block = {}
 
@@ -145,9 +145,9 @@ class Mine(Thread):
                         'recipient': miner.node_identifier,
                         'amount': 1
                     }
-                    r = requests.post(url=f'{miner.manager_node}/slave/done', json=block)
+                    r = requests.post(url=f'http://{miner.manager_node}/slave/done', json=block)
                     if r.status_code == requests.codes.ok:
-                        requests.post(url=f'{miner.manager_node}/transactions/new', json=payload)   # Reward miner for block
+                        requests.post(url=f'http://{miner.manager_node}/transactions/new', json=payload)   # Reward miner for block
                         self.completed = True
 
         miner.current_transactions = []

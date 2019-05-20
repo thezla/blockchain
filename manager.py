@@ -22,7 +22,7 @@ class Blockchain:
         self.nodes = set()
         self.slave_nodes = set()
         self.number_of_nodes = 0
-        self.address = ""
+        self.address = ''
 
         # Create the genesis block
         self.new_genesis_block(previous_hash='1', proof=100, block_transactions=[])
@@ -40,9 +40,11 @@ class Blockchain:
         parsed_url = urlparse(address)
         if parsed_url.netloc:
             self.nodes.add(parsed_url.netloc)
+            self.address = parsed_url.netloc
         elif parsed_url.path:
             # Accepts an URL without scheme like '192.168.0.5:5000'.
             self.nodes.add(parsed_url.path)
+            self.address = parsed_url.path
         else:
             raise ValueError('Invalid URL')
 
@@ -58,7 +60,7 @@ class Blockchain:
             headers = {'content-type': 'application/json'}
             for node in neighbors:
                 # Do not request node list from itself
-                if node != node_address:
+                if node != self.address:
                     requests.post(url=f'http://{node}/nodes/register', json=payload, headers=headers)
 
 
@@ -240,12 +242,12 @@ class Blockchain:
             requests.post(url='http://'+node+'/start', json=payload)
 
 
+
 # Instantiate the Node
 app = Flask(__name__)
 
 # Generate a globally unique id for this node
 node_identifier = str(uuid4()).replace('-', '')
-#node_address = ""
 
 # Instantiate the Blockchain
 manager = Blockchain()
@@ -297,7 +299,6 @@ class NewMiner(Thread):
         port = 6000+manager.number_of_nodes
         address = f'0.0.0.0:{port}'
         manager.slave_nodes.add(address)
-        #global node_address
         miner.start('http://0.0.0.0', port=port, manager_address=manager.address)
         # Set miner's manager node and own address
         #requests.post(url=f'{address}/set_manager_address', json=manager.address)
@@ -469,6 +470,7 @@ def add_miner():
 @app.route('/cluster/setup', methods=['GET'])
 def setup_cluster():
     # Set own IP address
+    '''
     cwd = os.path.dirname(os.path.abspath(__file__))
     p = Path(cwd)
     path = p / 'cluster_config'
@@ -478,7 +480,9 @@ def setup_cluster():
     with open(path, 'w') as f:
         f.write('')
         f.close()
-
+    '''
+    #node_address = request.environ.get('HTTP_X_REAL_IP', request.remote_addr)
+    #manager.address = node_address
     for node in manager.slave_nodes:
         requests.post(url=f'http://{node}/set_address', json=node)
         requests.post(url=f'http://{node}/set_manager_address', json=manager.address)
@@ -545,7 +549,7 @@ with app.test_request_context():
     manage_task.start()
 
 
-if __name__ == '__main__':
+def main():
     from argparse import ArgumentParser
 
     parser = ArgumentParser()
@@ -555,7 +559,7 @@ if __name__ == '__main__':
 
     # Add own address to node list
     address = f'http://0.0.0.0:{port}'
-
+    #manager.address = address
     manager.register_node(address)
 
     cwd = os.path.dirname(os.path.abspath(__file__))
@@ -567,3 +571,6 @@ if __name__ == '__main__':
     
     # Start Flask app
     app.run(host='0.0.0.0', port=port, threaded=False)
+
+if __name__ == '__main__':
+    main()
