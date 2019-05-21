@@ -9,6 +9,7 @@ from threading import Thread
 import datetime
 import subprocess
 import miner
+import importlib
 import os
 from pathlib import Path
 
@@ -299,7 +300,17 @@ class NewMiner(Thread):
         port = 6000+len(manager.slave_nodes)
         address = f'0.0.0.0:{port}'
         manager.slave_nodes.add(address)
-        miner.start(address='http://0.0.0.0', port=port, manager_address=manager.address)
+
+        import sys
+        import importlib.util
+
+        # Create a instance of the miner.py module
+        SPEC_OS = importlib.util.find_spec('miner')
+        new_miner = importlib.util.module_from_spec(SPEC_OS)
+        SPEC_OS.loader.exec_module(new_miner)
+        sys.modules[f'miner_{address}'] = new_miner
+
+        new_miner.start(address='http://0.0.0.0', port=port, manager_address=manager.address)
 
 
 class Sync(Thread):
