@@ -569,13 +569,6 @@ def main():
     address = f'http://0.0.0.0:{port}'
     #manager.address = address
     manager.register_node(address)
-
-    cwd = os.path.dirname(os.path.abspath(__file__))
-    p = Path(cwd)
-    path = p / f'cluster_config'
-
-    with open(path, 'w+') as f:
-        f.write(address)
     
     # Start Flask app
     app.run(host='0.0.0.0', port=port, threaded=False)
