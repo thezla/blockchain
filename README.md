@@ -34,6 +34,6 @@ $ pipenv install
 
 ## TODO
 * Make miner nodes cooperate to find proof.
-* Make it so the transactions are not removed from the pool while composed into blocks. Only when a block has been mined.
-* Change the transaction pool from a list to a dictionary to allow faster lookups and deletions.
+~~* Make it so the transactions are not removed from the pool while composed into blocks. Only when a block has been mined.~~
+~~* Change the transaction pool from a list to a dictionary to allow faster lookups and deletions.~~
 * Make the program exit cleaner when CTRL-C is pressed.
