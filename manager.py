@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 import random
 from threading import Thread
-import datetime
+from datetime import datetime
 import subprocess
 import miner
 import importlib
@@ -23,6 +23,7 @@ class Blockchain:
         self.nodes = set()
         self.slave_nodes = set()
         self.address = ''
+        self.cluster_start_port = 0
 
         # Create the genesis block
         self.new_genesis_block(previous_hash='1', proof=100, block_transactions=[])
@@ -40,11 +41,12 @@ class Blockchain:
         parsed_url = urlparse(address)
         if parsed_url.netloc:
             self.nodes.add(parsed_url.netloc)
-            self.address = parsed_url.netloc
+
+            #self.address = parsed_url.netloc
         elif parsed_url.path:
             # Accepts an URL without scheme like '192.168.0.5:5000'.
             self.nodes.add(parsed_url.path)
-            self.address = parsed_url.path
+            #self.address = parsed_url.path
         else:
             raise ValueError('Invalid URL')
 
@@ -173,6 +175,17 @@ class Blockchain:
         for transaction in block['transactions']:
             if transaction['id'] in self.current_transactions:
                 self.current_transactions.pop(transaction['id'])
+        
+        # Construct log entry
+        payload = {
+            'chain_height': len(self.chain),
+            'transaction_pool_size': len(self.current_transactions),
+            'miner_id': block['node'],
+            'manager_id': node_identifier,
+            'time': str(datetime.now())
+        }
+        # Send data to logging node
+        requests.post(url='http://0.0.0.0:4000/report', json=payload)
         return block
 
     def new_genesis_block(self, proof, previous_hash, block_transactions):
@@ -214,8 +227,10 @@ class Blockchain:
 
 
     # TODO: Fixa transaktionssync
-    def resolve_transactions():
-        pass
+    def sync_transactions(self):
+        if len(self.nodes) > 1:
+            for node in self.nodes:
+                requests.post(url=f'http://{node}/transactions/update', json=self.current_transactions)
 
 
     #@property
@@ -241,7 +256,29 @@ class Blockchain:
         }
         for node in self.slave_nodes:
             requests.post(url='http://'+node+'/start', json=payload)
+    
+    def set_address(self, address):
+        parsed_url = urlparse(address)
+        self.address = parsed_url.netloc
+    
+    def set_cluster_start_port(self, n):
+        self.cluster_start_port = n
 
+    def get_cluster_start_port(self):
+        return self.cluster_start_port
+    
+    def stop_all_clusters(self):
+        if len(self.nodes) > 1:
+            for node in self.nodes:
+                if node is not self.address:
+                    requests.get(url=f'http://{node}/cluster/stop')
+
+    
+    def start_all_clusters(self):
+        if len(self.nodes) > 1:
+            for node in self.nodes:
+                if node is not self.address:
+                    requests.get(url=f'http://{node}/cluster/start')
 
 
 # Instantiate the Node
@@ -274,7 +311,7 @@ class Manage(Thread):
         global cluster_running
 
         while True:
-            if cluster_running:
+            if cluster_running and manager.current_transactions:
                 if not waiting_for_response and not block_found:
                     payload = {
                         'transactions': manager.compose_block_transactions(),
@@ -297,14 +334,15 @@ class NewMiner(Thread):
         self.task_id = task_id
     
     def run(self):
-        port = 6000+len(manager.slave_nodes)
+        #port = 6000+len(manager.slave_nodes)+len(manager.nodes)*100
+        port = manager.get_cluster_start_port()+len(manager.slave_nodes)
         address = f'0.0.0.0:{port}'
         manager.slave_nodes.add(address)
 
         import sys
         import importlib.util
 
-        # Create a instance of the miner.py module
+        # Create an instance of the miner.py module
         SPEC_OS = importlib.util.find_spec('miner')
         new_miner = importlib.util.module_from_spec(SPEC_OS)
         SPEC_OS.loader.exec_module(new_miner)
@@ -371,25 +409,6 @@ def get_transactions():
     return jsonify(response), 200
 
 
-@app.route('/transactions/sync', methods=['POST'])
-def sync_transactions(self):
-    values = request.get_json()
-
-    transactions = values['transactions']
-    if transactions is None:
-        return "Error: Please supply a valid list of transactions", 400
-
-    for trans in transactions:
-        if trans not in self.current_transactions:
-            manager.new_transaction()
-
-    response = {
-        'message': 'New nodes have been added',
-        'total_nodes': list(manager.nodes),
-    }
-    return jsonify(response), 201
-
-
 @app.route('/slave/done', methods=['POST'])
 def slave_done():
     global block_found
@@ -398,7 +417,10 @@ def slave_done():
         block_found = True
         block = request.get_json()
         manager.add_block(block)
+        manager.stop_all_clusters()
+        manager.sync_transactions()
         start_cluster()
+        manager.start_all_clusters()
         return 'Block recieved, restarting mining', 200
     return 'Block already found, restarting mining', 400
 
@@ -474,28 +496,6 @@ def add_miner():
     return 'Miner node created and added to cluster!', 200
 
 
-# Sets up miner's and their manager's adresses
-@app.route('/cluster/setup', methods=['GET'])
-def setup_cluster():
-    # Set own IP address
-    '''
-    cwd = os.path.dirname(os.path.abspath(__file__))
-    p = Path(cwd)
-    path = p / 'cluster_config'
-    with open(path, 'r') as f:
-        manager.address = f.readline().strip()
-        f.close()
-    with open(path, 'w') as f:
-        f.write('')
-        f.close()
-    '''
-    #node_address = request.environ.get('HTTP_X_REAL_IP', request.remote_addr)
-    #manager.address = node_address
-    for node in manager.slave_nodes:
-        requests.post(url=f'http://{node}/set_address', json=node)
-        requests.post(url=f'http://{node}/set_manager_address', json=manager.address)
-    return 'Cluster configured', 200
-
 
 # Tells cluster to start mining
 @app.route('/cluster/start', methods=['GET'])
@@ -505,7 +505,6 @@ def start_cluster():
 
     if not cluster_running:
         if manager.slave_nodes:
-            #block_found = False
             cluster_running = True
             return 'Cluster mining initiated!', 200
         return 'Error: No nodes in cluster', 400
@@ -541,6 +540,13 @@ def generate_transactions():
     return f'{number} transactions generated!'
 
 
+    @app.route('/transactions/update', methods=['POST'])
+    def update_transactions(self):
+        new_transactions = request.get_json()
+        self.current_transactions = new_transactions
+        return 'Transactions updated!', 200
+
+
 @app.route('/address', methods=['GET'])
 def get_address():
     return f'{manager.address}', 200
@@ -549,6 +555,9 @@ def get_address():
 # Initialization --------------------
 # Activate syncing of manager node list
 sync_nodes()
+
+# Get longest blockchain
+#manager.resolve_conflicts()
 
 # Activate manage thread
 manage_task = Manage(task_id=4)
@@ -567,9 +576,12 @@ def main():
 
     # Add own address to node list
     address = f'http://0.0.0.0:{port}'
-    #manager.address = address
+    manager.set_address(address) 
     manager.register_node(address)
-    
+
+    # Prevent address collisions when using the local network, change this in bigger networks
+    manager.set_cluster_start_port(6000+(len(manager.nodes)*100))
+
     # Start Flask app
     app.run(host='0.0.0.0', port=port, threaded=False)
 
