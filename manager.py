@@ -313,12 +313,22 @@ class Manage(Thread):
         while True:
             if cluster_running and manager.current_transactions:
                 if not waiting_for_response and not block_found:
-                    payload = {
-                        'transactions': manager.compose_block_transactions(),
-                        'last_block': manager.last_block()
-                    }
+                    
+                    transactions = manager.compose_block_transactions()
+                    last_block = manager.last_block()
+                    interval = len(manager.slave_nodes)
+                    start_value = 0
+
                     for node in manager.slave_nodes:
+                        payload = {
+                            'transactions': transactions,
+                            'last_block': last_block,
+                            'interval': interval,
+                            'start_value': start_value
+                        }
+
                         requests.post(url='http://'+node+'/start', json=payload)
+                        start_value+=1
                     waiting_for_response = True
                 # Miners are done, start on another block
                 elif block_found:

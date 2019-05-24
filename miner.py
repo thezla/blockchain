@@ -17,6 +17,8 @@ class Miner:
         self.node_address = ''
         self.current_transactions = []
         self.last_block = {}
+        self.interval = 1
+        self.start_value = 0
 
         # Activates / Deactivates mining process
         self.is_mining = False
@@ -71,12 +73,12 @@ class Miner:
         last_proof = last_block['proof']
         last_hash = self.hash(last_block)
 
-        proof = 0
+        proof = self.start_value
         while self.is_mining:
             if self.valid_proof(last_proof, proof, last_hash):
                 return proof
             else:
-                proof += 1
+                proof += self.interval
             #sleep(random.randint(1,4))
         return -1
 
@@ -93,7 +95,7 @@ class Miner:
 
         guess = f'{last_proof}{proof}{last_hash}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
-        return guess_hash[:4] == "0000"         # Hash made easy to simulate mining
+        return guess_hash[:5] == "00000"         # Hash made easy to simulate mining
     
     def set_address(self, address):
         self.node_address = address
@@ -160,28 +162,31 @@ def start_mining():
     values = request.get_json()
 
     # Check that the required fields are in the POST'ed data
-    required = ['transactions', 'last_block']
+    required = ['transactions', 'last_block', 'interval']
     if not all(k in values for k in required):
         return 'Missing values', 400
 
     if values != None:
         miner.current_transactions = values['transactions']
         miner.last_block = values['last_block']
+        miner.interval = values['interval']
+        miner.start_value = values['start_value']
 
         # If block was mined correctly
         async_task = Mine(task_id=1)
         async_task.setName('Mine proof')
         async_task.start()
-        b = async_task.join()
-        if b:
+        #completed = async_task.join()
+        '''if completed:
             response = {'message': 'Block found, stopped mining'}
         else:
             response = {'message': 'Block not found, stopped mining'}
-        return jsonify(response), 200
+        return jsonify(response), 200'''
+        return 'Mining completed', 200
 
     miner.current_transactions = []
     miner.last_block = dict()
-    return jsonify({'message': 'Transaction list was None, stopped mining'}), 400
+    #return jsonify({'message': 'Transaction list was None, stopped mining'}), 400
 
 
 @app.route('/stop', methods=['GET'])
